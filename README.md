@@ -93,9 +93,10 @@ No paid API, no keys, and no single point of failure — every endpoint has a fa
 
 | Data | Primary source | Fallback |
 |---|---|---|
-| Quotes (stocks/ETFs) | Nasdaq public quote API | Yahoo Finance → Stooq |
+| Quotes (stocks/ETFs) | OpenBB, if configured → Nasdaq public quote API | Yahoo Finance → Stooq |
 | Fundamentals (P/E, EPS, beta, div yield) | TradingView scanner API | — |
-| Historical candles | Nasdaq chart API | Yahoo Finance → Stooq |
+| Fundamentals widget (valuation, margins, growth, health) | OpenBB (optional, `OPENBB_URL`) | — |
+| Historical candles | OpenBB, if configured → Nasdaq chart API | Yahoo Finance → Stooq |
 | Symbol search | TradingView symbol search | Yahoo Finance |
 | Full‑market screener / heatmap | TradingView scanner API (live, whole US market) | — |
 | Options chain | Nasdaq option‑chain API | Yahoo Finance |
@@ -139,6 +140,26 @@ Two optional knobs for the assistant, both standard for the Anthropic SDK:
 
 - `ANTHROPIC_BASE_URL` — point the assistant at an Anthropic-compatible endpoint (a self-hosted gateway, an EU-hosted relay, etc.) instead of api.anthropic.com.
 - `ANTHROPIC_MODEL` — override the model sent in requests (default: `claude-opus-4-8`). Required when the endpoint behind `ANTHROPIC_BASE_URL` serves models under different ids.
+
+### Optional: OpenBB integration
+
+[OpenBB](https://github.com/OpenBB-finance/OpenBB) (the Open Data Platform) can run next to OpenTerminal as its data engine. When `OPENBB_URL` is set, the API asks OpenBB **first** for quotes and historical candles, and anything OpenBB can't answer falls through to the free providers above. It also unlocks the **FUNDAMENTALS** widget, which shows valuation, margins, growth, balance-sheet health and a company profile.
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install openbb
+openbb-api                     # serves http://127.0.0.1:6900
+
+export OPENBB_URL=http://127.0.0.1:6900
+npm run dev
+```
+
+- `OPENBB_PROVIDER`: the OpenBB vendor that answers (default `yfinance`, bundled with `openbb`). For licensed, real-time or deeper data, install a vendor extension (e.g. `pip install openbb-fmp`), add its key to `~/.openbb_platform/user_settings.json`, and set `OPENBB_PROVIDER=fmp`. No OpenTerminal code changes are needed.
+- `OPENBB_USERNAME` / `OPENBB_PASSWORD`: set these if you started `openbb-api` with HTTP basic auth.
+- `/api/status` reports whether OpenBB is enabled, and its latency and errors appear under `providers` like every other source.
+- Leave `OPENBB_URL` unset and nothing changes: the terminal stays keyless and OpenBB-free.
+
+With Docker, `docker compose up --build` starts an `openbb` service and wires it in automatically. Use `OPENBB_EXTRAS="openbb-fmp"` to bake in extra vendors. Vendor keys live in the `openbb-settings` volume (`/root/.openbb_platform/user_settings.json`). To run without it, use `OPENBB_URL= docker compose up --build api web`.
 
 ### Security defaults
 

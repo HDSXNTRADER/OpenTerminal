@@ -18,6 +18,7 @@ export type WidgetType =
   | "ai"
   | "calendar"
   | "insider"
+  | "fundamentals"
   | "tv"
   | "recap";
 
@@ -78,6 +79,7 @@ const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   ai: { w: 5, h: 10 },
   calendar: { w: 12, h: 11 },
   insider: { w: 7, h: 9 },
+  fundamentals: { w: 5, h: 13 },
   tv: { w: 6, h: 11 },
   recap: { w: 5, h: 12 },
 };

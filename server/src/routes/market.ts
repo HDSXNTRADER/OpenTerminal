@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { cached, cacheGet, cacheStore, staleGet } from "../cache.js";
-import { withFallback } from "../providers/registry.js";
+import { tracked, withFallback } from "../providers/registry.js";
 import * as yahoo from "../providers/yahoo.js";
 import * as stooq from "../providers/stooq.js";
 import * as nasdaq from "../providers/nasdaq.js";
@@ -13,6 +13,7 @@ import * as news from "../providers/news.js";
 import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
+import * as openbb from "../providers/openbb.js";
 
 export const marketRouter = Router();
 
@@ -142,6 +143,19 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
     remaining = remaining.filter((s) => !fetched.has(s));
   }
 
+  // OpenBB (when configured) answers the whole batch in one request; anything
+  // it misses continues down the free-provider chain below.
+  if (remaining.length > 0 && openbb.enabled()) {
+    try {
+      const rows = await tracked("openbb", () => openbb.quotes(remaining));
+      const wanted = new Set(remaining);
+      for (const q of rows) if (wanted.has(q.symbol)) fetched.set(q.symbol, q);
+      remaining = remaining.filter((s) => !fetched.has(s));
+    } catch {
+      // fall through to the public providers
+    }
+  }
+
   const nasdaqResults = await Promise.allSettled(remaining.map((s) => nasdaq.quote(s)));
   nasdaqResults.forEach((r, i) => {
     if (r.status === "fulfilled") fetched.set(remaining[i], r.value);
@@ -237,6 +251,7 @@ marketRouter.get("/history/:symbol", async (req, res) => {
         : isVix(symbol)
         ? vixHistory(rangeKey)
         : withFallback([
+            ...openbbFirst(() => openbb.history(symbol, rangeKey)),
             ["nasdaq", () => nasdaq.history(symbol, rangeKey)],
             ["yahoo", () => yahoo.history(symbol, yahooRange(rangeKey).range, yahooRange(rangeKey).interval)],
             ["stooq", () => stooq.history(symbol)],
@@ -248,6 +263,11 @@ marketRouter.get("/history/:symbol", async (req, res) => {
     fail(req, res, err);
   }
 });
+
+/** Prepends OpenBB to a fallback chain only when OPENBB_URL is configured. */
+function openbbFirst<T>(fn: () => Promise<T>): Array<[string, () => Promise<T>]> {
+  return openbb.enabled() ? [["openbb", fn]] : [];
+}
 
 function yahooRange(rangeKey: string): { range: string; interval: string } {
   const map: Record<string, { range: string; interval: string }> = {
@@ -262,6 +282,23 @@ function yahooRange(rangeKey: string): { range: string; interval: string } {
   };
   return map[rangeKey] ?? map["6M"];
 }
+
+// ---- fundamentals (OpenBB only: valuation, margins, growth, balance-sheet health) ----
+
+marketRouter.get("/fundamentals/:symbol", async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  if (!openbb.enabled()) {
+    return res.status(503).json({ error: "Fundamentals need the OpenBB service. Set OPENBB_URL (see README)." });
+  }
+  try {
+    const data = await cached(`fundamentals:${symbol}`, 3_600_000, () =>
+      withFallback([["openbb", () => openbb.fundamentals(symbol)]])
+    );
+    res.json(data);
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
 
 // ---- search ----
 
@@ -728,6 +765,7 @@ marketRouter.get("/earnings-history/:symbol", async (req, res) => {
       const [surprises, candles] = await Promise.all([
         nasdaq.earningsSurprise(symbol),
         withFallback([
+          ...openbbFirst(() => openbb.history(symbol, "1Y")),
           ["nasdaq", () => nasdaq.history(symbol, "1Y")],
           ["yahoo", () => yahoo.history(symbol, yahooRange("1Y").range, yahooRange("1Y").interval)],
           ["stooq", () => stooq.history(symbol)],
