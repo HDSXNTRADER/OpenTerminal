@@ -5,6 +5,7 @@ import { portfolioRouter } from "./routes/portfolio.js";
 import { aiRouter } from "./routes/ai.js";
 import { allStats } from "./providers/registry.js";
 import { requireApiKey } from "./auth.js";
+import * as openbb from "./providers/openbb.js";
 import { rateLimit } from "./rateLimit.js";
 
 const app = express();
@@ -50,6 +51,7 @@ app.get("/api/status", (_req, res) => {
     time: new Date().toISOString(),
     providers: allStats(),
     ai: Boolean(process.env.ANTHROPIC_API_KEY),
+    openbb: openbb.config(),
   });
 });
 

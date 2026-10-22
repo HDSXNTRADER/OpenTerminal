@@ -18,8 +18,27 @@ services:
       # the web service (see README > Security defaults) — otherwise a caller
       # could forge X-Forwarded-For to dodge the /api/ai rate limit.
       - TRUST_PROXY=${TRUST_PROXY:-}
+      # OpenBB is tried first for quotes/history and powers the Fundamentals
+      # widget; if it's down, everything falls back to the free providers.
+      # Set OPENBB_URL= (empty) to switch the integration off.
+      - OPENBB_URL=${OPENBB_URL-http://openbb:6900}
+      - OPENBB_PROVIDER=${OPENBB_PROVIDER:-yfinance}
     volumes:
       - terminal-data:/app/data
+    depends_on:
+      - openbb
+    restart: unless-stopped
+
+  openbb:
+    build:
+      context: openbb
+      args:
+        - OPENBB_EXTRAS=${OPENBB_EXTRAS:-}
+    # Not published to the host: only the api service talks to it.
+    expose:
+      - "6900"
+    volumes:
+      - openbb-settings:/root/.openbb_platform
     restart: unless-stopped
 
   web:
@@ -40,3 +59,4 @@ services:
 
 volumes:
   terminal-data:
+  openbb-settings:

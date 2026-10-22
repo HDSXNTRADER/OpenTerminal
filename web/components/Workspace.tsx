@@ -19,6 +19,7 @@ import PortfolioWidget from "./widgets/PortfolioWidget";
 import AiWidget from "./widgets/AiWidget";
 import CalendarWidget from "./widgets/CalendarWidget";
 import InsiderWidget from "./widgets/InsiderWidget";
+import FundamentalsWidget from "./widgets/FundamentalsWidget";
 import TvWidget from "./widgets/TvWidget";
 import RecapWidget from "./widgets/RecapWidget";
 import WidgetErrorBoundary from "./WidgetErrorBoundary";
@@ -40,6 +41,7 @@ function WidgetBody({ widget }: { widget: WidgetInstance }) {
     case "ai": return <AiWidget />;
     case "calendar": return <CalendarWidget />;
     case "insider": return <InsiderWidget widget={widget} />;
+    case "fundamentals": return <FundamentalsWidget widget={widget} />;
     case "tv": return <TvWidget />;
     case "recap": return <RecapWidget />;
   }
@@ -95,7 +97,7 @@ const TITLES: Record<string, string> = {
   quote: "Quote", chart: "Chart", watchlist: "Watchlist", news: "News",
   heatmap: "Heatmap", screener: "Screener", crypto: "Crypto",
   macro: "Macro / Indexes", options: "Option Chain", portfolio: "Portfolio", ai: "AI Assistant",
-  calendar: "Calendar", insider: "Insider Transactions", tv: "Live TV", recap: "Market Recap",
+  calendar: "Calendar", insider: "Insider Transactions", fundamentals: "Fundamentals (OpenBB)", tv: "Live TV", recap: "Market Recap",
 };
 
 export default function Workspace() {
@@ -106,7 +108,7 @@ export default function Workspace() {
   const toggleLinked = useTerminal((s) => s.toggleLinked);
   const activeSymbol = useTerminal((s) => s.activeSymbol);
 
-  const symbolAware = new Set(["quote", "chart", "news", "options", "insider"]);
+  const symbolAware = new Set(["quote", "chart", "news", "options", "insider", "fundamentals"]);
 
   return (
     <Grid
