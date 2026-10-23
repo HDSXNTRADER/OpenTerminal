@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { apiGet, apiPost, type Quote } from "../../lib/api";
 import { useTerminal } from "../../store/terminal";
+import { t } from "../../lib/i18n";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -44,16 +45,16 @@ export default function AiWidget() {
       <div ref={scrollRef} className="flex-1 overflow-auto p-2 space-y-2 min-h-0">
         {messages.length === 0 && (
           <div className="dim">
-            Ask about {activeSymbol}, the market, an indicator, or a headline. The current quote is shared as context.
+            {t("Ask about {s}, the market, an indicator, or a headline. The current quote is shared as context.", { s: activeSymbol })}
           </div>
         )}
         {messages.map((m, i) => (
           <div key={i}>
-            <span className={m.role === "user" ? "amber" : "up"}>{m.role === "user" ? "YOU" : "AI"} ›</span>{" "}
+            <span className={m.role === "user" ? "amber" : "up"}>{m.role === "user" ? t("YOU") : "AI"} ›</span>{" "}
             <span className="whitespace-pre-wrap">{m.content}</span>
           </div>
         ))}
-        {chat.isPending && <div className="dim">thinking…</div>}
+        {chat.isPending && <div className="dim">{t("thinking…")}</div>}
         {chat.error && <div className="down">{(chat.error as Error).message}</div>}
       </div>
       <div className="flex gap-1 p-1 border-t border-[var(--border)] shrink-0">
@@ -62,9 +63,9 @@ export default function AiWidget() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder={`Ask about ${activeSymbol}…`}
+          placeholder={t("Ask about {s}…", { s: activeSymbol })}
         />
-        <button className="term-btn" onClick={send}>SEND</button>
+        <button className="term-btn" onClick={send}>{t("SEND")}</button>
       </div>
     </div>
   );

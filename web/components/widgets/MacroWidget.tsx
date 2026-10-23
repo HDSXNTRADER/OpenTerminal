@@ -6,6 +6,7 @@ import { apiGet, fmt, pctClass } from "../../lib/api";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from "recharts";
 import { useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
+import { t } from "../../lib/i18n";
 
 type MacroData = {
   yields: Array<{ tenor: string; value: number | null }>;
@@ -34,9 +35,9 @@ export default function MacroWidget() {
         ))}
       </div>
       {error ? (
-        <div className="p-2 down">Error: {(error as Error).message}</div>
+        <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>
       ) : !data ? (
-        <div className="p-2 dim">Loading macro data…</div>
+        <div className="p-2 dim">{t("Loading macro data…")}</div>
       ) : (
         <MacroBody data={data} region={region} setActiveSymbol={setActiveSymbol} />
       )}
@@ -90,7 +91,7 @@ function MacroBody({
       </div>
       <table className="data-table">
         <thead>
-          <tr><th>Index / Commodity</th><th>Last</th><th>Chg%</th></tr>
+          <tr><th>{t("Index / Commodity")}</th><th>{t("Last")}</th><th>{t("Chg%")}</th></tr>
         </thead>
         <tbody>
           {data.indexes.map((q) => (

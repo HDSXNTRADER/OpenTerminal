@@ -4,6 +4,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { normalizeSymbol } from "../lib/symbol";
 
+export type Lang = "pt" | "en" | "es";
+
 export type WidgetType =
   | "quote"
   | "chart"
@@ -35,6 +37,9 @@ export type LayoutItem = { i: string; x: number; y: number; w: number; h: number
 
 type TerminalState = {
   activeSymbol: string;
+  /** UI language; Portuguese by default. */
+  lang: Lang;
+  setLang: (lang: Lang) => void;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
   watchlist: string[];
@@ -109,6 +114,8 @@ export const useTerminal = create<TerminalState>()(
   persist(
     (set) => ({
       activeSymbol: "AAPL",
+      lang: "pt",
+      setLang: (lang) => set({ lang }),
       widgets: DEFAULT_WIDGETS,
       layout: DEFAULT_LAYOUT,
       watchlist: ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "SPY"],

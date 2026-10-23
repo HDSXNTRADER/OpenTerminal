@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiGet, fmt, fmtBig, pctClass, type Quote } from "../../lib/api";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 import Flash from "../Flash";
+import { t } from "../../lib/i18n";
 
 type ShortVolume = { date: string; shortVolume: number; shortExemptVolume: number; totalVolume: number; shortVolumePercent: number };
 
@@ -21,27 +22,27 @@ export default function QuoteWidget({ widget }: { widget: WidgetInstance }) {
     staleTime: 3_600_000,
   });
 
-  if (error) return <div className="p-2 down">Error: {(error as Error).message}</div>;
-  if (!data) return <div className="p-2 dim">Loading {symbol}…</div>;
+  if (error) return <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>;
+  if (!data) return <div className="p-2 dim">{t("Loading {s}…", { s: symbol })}</div>;
 
   const rows: Array<[string, string, string?]> = [
-    ["Open", fmt(data.open)],
-    ["High", fmt(data.high)],
-    ["Low", fmt(data.low)],
-    ["Prev Close", fmt(data.previousClose)],
-    ["Bid", fmt(data.bid)],
-    ["Ask", fmt(data.ask)],
-    ["Volume", fmtBig(data.volume)],
-    ["Avg Vol 3M", fmtBig(data.avgVolume)],
-    ...(shortVol ? ([["Short Vol %", fmt(shortVol.shortVolumePercent, 1) + "%"]] as Array<[string, string]>) : []),
-    ["Mkt Cap", fmtBig(data.marketCap)],
+    [t("Open"), fmt(data.open)],
+    [t("High"), fmt(data.high)],
+    [t("Low"), fmt(data.low)],
+    [t("Prev Close"), fmt(data.previousClose)],
+    [t("Bid"), fmt(data.bid)],
+    [t("Ask"), fmt(data.ask)],
+    [t("Volume"), fmtBig(data.volume)],
+    [t("Avg Vol 3M"), fmtBig(data.avgVolume)],
+    ...(shortVol ? ([[t("Short Vol %"), fmt(shortVol.shortVolumePercent, 1) + "%"]] as Array<[string, string]>) : []),
+    [t("Mkt Cap"), fmtBig(data.marketCap)],
     ["P/E (ttm)", fmt(data.pe)],
     ["EPS (ttm)", fmt(data.eps)],
-    ["Div Yield", data.dividendYield !== null ? fmt(data.dividendYield * 100) + "%" : "—"],
-    ["52W High", fmt(data.week52High)],
-    ["52W Low", fmt(data.week52Low)],
+    [t("Div Yield"), data.dividendYield !== null ? fmt(data.dividendYield * 100) + "%" : "—"],
+    [t("52W High"), fmt(data.week52High)],
+    [t("52W Low"), fmt(data.week52Low)],
     ["Beta", fmt(data.beta)],
-    ["Shares Out", fmtBig(data.sharesOutstanding)],
+    [t("Shares Out"), fmtBig(data.sharesOutstanding)],
   ];
 
   return (

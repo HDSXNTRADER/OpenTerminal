@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
+import { t } from "../../lib/i18n";
 
 // Direct HLS streams from each channel's own free, publicly reachable CDN —
 // no YouTube involved, so no embed/consent-wall restrictions. Verified live.
@@ -31,14 +32,14 @@ export default function TvWidget() {
         video.play().catch(() => {});
       });
       hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (data.fatal) setError(`Stream unavailable right now (${data.details}). Try another channel.`);
+        if (data.fatal) setError(t("Stream unavailable right now ({d}). Try another channel.", { d: data.details }));
       });
       return () => hls.destroy();
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = channel.url;
       video.play().catch(() => {});
     } else {
-      setError("Your browser doesn't support HLS playback.");
+      setError(t("Your browser doesn't support HLS playback."));
     }
   }, [channel]);
 

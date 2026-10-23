@@ -23,6 +23,7 @@ import FundamentalsWidget from "./widgets/FundamentalsWidget";
 import TvWidget from "./widgets/TvWidget";
 import RecapWidget from "./widgets/RecapWidget";
 import WidgetErrorBoundary from "./WidgetErrorBoundary";
+import { t } from "../lib/i18n";
 
 const Grid = WidthProvider(GridLayout);
 
@@ -84,7 +85,7 @@ function SymbolTag({ widget, activeSymbol }: { widget: WidgetInstance; activeSym
   return (
     <span
       className="ml-2 text-[var(--text)] cursor-pointer hover:text-[var(--amber)]"
-      title="Click to set this widget's ticker"
+      title={t("Click to set this widget's ticker")}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => setEditing(true)}
     >
@@ -130,13 +131,13 @@ export default function Workspace() {
           <div className="terminal-panel">
             <div className="panel-title">
               <span>
-                {TITLES[w.type]}
+                {t(TITLES[w.type])}
                 {symbolAware.has(w.type) && <SymbolTag widget={w} activeSymbol={activeSymbol} />}
               </span>
               <span className="flex gap-2 items-center">
                 {symbolAware.has(w.type) && (
                   <button
-                    title={w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)"}
+                    title={t(w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)")}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => toggleLinked(w.id)}
                     className={w.linked ? "text-[var(--amber)]" : "dim"}
@@ -147,6 +148,7 @@ export default function Workspace() {
                 <button
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => removeWidget(w.id)}
+                  title={t("Close widget")}
                   className="dim hover:text-[var(--down)]"
                 >
                   ✕
@@ -154,7 +156,7 @@ export default function Workspace() {
               </span>
             </div>
             <div className="flex-1 overflow-auto min-h-0">
-              <WidgetErrorBoundary name={TITLES[w.type]}>
+              <WidgetErrorBoundary name={t(TITLES[w.type])}>
                 <WidgetBody widget={w} />
               </WidgetErrorBoundary>
             </div>

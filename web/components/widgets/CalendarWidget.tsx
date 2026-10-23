@@ -5,6 +5,7 @@ import { Fragment, useMemo, useState } from "react";
 import { apiGet, fmt, pctClass } from "../../lib/api";
 import { symbolsParam } from "../../lib/symbol";
 import { useTerminal } from "../../store/terminal";
+import { t } from "../../lib/i18n";
 
 type EconEvent = {
   title: string;
@@ -56,19 +57,19 @@ function EconomicTab() {
     [data, minImpact]
   );
 
-  if (error) return <div className="p-2 down">Error: {(error as Error).message}</div>;
-  if (isLoading) return <div className="p-2 dim">Loading calendar…</div>;
+  if (error) return <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>;
+  if (isLoading) return <div className="p-2 dim">{t("Loading calendar…")}</div>;
 
-  const zone = TIMEZONES.find((t) => t.label === tz)?.zone;
+  const zone = TIMEZONES.find((z) => z.label === tz)?.zone;
 
   return (
     <div>
       <div className="flex gap-1 p-1 items-center flex-wrap">
         <button className={`term-btn ${minImpact === "medium" ? "active" : ""}`} onClick={() => setMinImpact("medium")}>
-          HIGH+MED
+          {t("HIGH+MED")}
         </button>
         <button className={`term-btn ${minImpact === "all" ? "active" : ""}`} onClick={() => setMinImpact("all")}>
-          ALL
+          {t("ALL")}
         </button>
         <span className="w-2" />
         <select
@@ -76,9 +77,9 @@ function EconomicTab() {
           onChange={(e) => setTz(e.target.value)}
           className="term-btn !py-0.5 bg-[var(--panel)] cursor-pointer"
         >
-          {TIMEZONES.map((t) => (
-            <option key={t.label} value={t.label}>
-              {t.label}
+          {TIMEZONES.map((z) => (
+            <option key={z.label} value={z.label}>
+              {z.label}
             </option>
           ))}
         </select>
@@ -86,12 +87,12 @@ function EconomicTab() {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Ccy</th>
-            <th>Event</th>
-            <th>Forecast</th>
-            <th>Previous</th>
-            <th>Actual</th>
+            <th>{t("Date")}</th>
+            <th>{t("Ccy")}</th>
+            <th>{t("Event")}</th>
+            <th>{t("Forecast")}</th>
+            <th>{t("Previous")}</th>
+            <th>{t("Actual")}</th>
           </tr>
         </thead>
         <tbody>
@@ -116,7 +117,7 @@ function EconomicTab() {
           ))}
         </tbody>
       </table>
-      {events.length === 0 && <div className="p-3 dim">No events in this window.</div>}
+      {events.length === 0 && <div className="p-3 dim">{t("No events in this window.")}</div>}
     </div>
   );
 }
@@ -147,20 +148,20 @@ function EarningsHistoryRows({ symbol }: { symbol: string }) {
     staleTime: 3_600_000,
   });
 
-  if (error) return <div className="p-2 down">Error: {(error as Error).message}</div>;
-  if (isLoading) return <div className="p-2 dim">Loading history for {symbol}…</div>;
+  if (error) return <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>;
+  if (isLoading) return <div className="p-2 dim">{t("Loading history for {s}…", { s: symbol })}</div>;
   if (data.length === 0) return <div className="p-2 dim">No earnings history for {symbol}.</div>;
 
   return (
     <table className="data-table">
       <thead>
         <tr>
-          <th>Quarter</th>
-          <th>Reported</th>
-          <th>Forecast</th>
-          <th>Actual</th>
-          <th>Surprise</th>
-          <th>Day After</th>
+          <th>{t("Quarter")}</th>
+          <th>{t("Reported")}</th>
+          <th>{t("Forecast")}</th>
+          <th>{t("Actual")}</th>
+          <th>{t("Surprise")}</th>
+          <th>{t("Day After")}</th>
         </tr>
       </thead>
       <tbody>
@@ -203,17 +204,17 @@ function EarningsTab() {
     [data]
   );
 
-  if (error) return <div className="p-2 down">Error: {(error as Error).message}</div>;
-  if (isLoading) return <div className="p-2 dim">Loading earnings…</div>;
+  if (error) return <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>;
+  if (isLoading) return <div className="p-2 dim">{t("Loading earnings…")}</div>;
 
   return (
     <table className="data-table">
       <thead>
         <tr>
-          <th>Sym</th>
-          <th>Last Earnings</th>
-          <th>Next Earnings</th>
-          <th>EPS Est.</th>
+          <th>{t("Sym")}</th>
+          <th>{t("Last Earnings")}</th>
+          <th>{t("Next Earnings")}</th>
+          <th>{t("EPS Est.")}</th>
         </tr>
       </thead>
       <tbody>
@@ -222,7 +223,7 @@ function EarningsTab() {
             <tr
               onClick={() => setExpanded(expanded === e.symbol ? null : e.symbol)}
               className="cursor-pointer"
-              title="Click for earnings history"
+              title={t("Click for earnings history")}
             >
               <td className="!text-left text-[var(--text)] font-bold underline decoration-1">{e.symbol}</td>
               <td className="dim">{fmtDate(e.lastEarningsDate)}</td>

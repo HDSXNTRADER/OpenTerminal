@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet, fmt, fmtBig, pctClass } from "../../lib/api";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { t } from "../../lib/i18n";
 
 // Served by the optional OpenBB service (see README > OpenBB integration).
 // Percent fields already arrive as whole percents (25 = 25%).
@@ -37,14 +38,14 @@ export default function FundamentalsWidget({ widget }: { widget: WidgetInstance 
     retry: false,
   });
 
-  if (error) return <div className="p-2 down">Error: {(error as Error).message}</div>;
-  if (isLoading || !data) return <div className="p-2 dim">Loading fundamentals for {symbol}…</div>;
+  if (error) return <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>;
+  if (isLoading || !data) return <div className="p-2 dim">{t("Loading fundamentals for {s}…", { s: symbol })}</div>;
 
   const sections: Array<[string, Array<[string, string, string?]>]> = [
     [
-      "Valuation",
+      t("Valuation"),
       [
-        ["Mkt Cap", fmtBig(data.marketCap)],
+        [t("Mkt Cap"), fmtBig(data.marketCap)],
         ["Ent. Value", fmtBig(data.enterpriseValue)],
         ["P/E (ttm)", fmt(data.valuation.pe)],
         ["Fwd P/E", fmt(data.valuation.forwardPe)],
@@ -55,37 +56,37 @@ export default function FundamentalsWidget({ widget }: { widget: WidgetInstance 
       ],
     ],
     [
-      "Profitability",
+      t("Profitability"),
       [
-        ["Gross Margin", pct(data.profitability.grossMargin)],
-        ["Oper. Margin", pct(data.profitability.operatingMargin)],
-        ["Net Margin", pct(data.profitability.profitMargin)],
+        [t("Gross Margin"), pct(data.profitability.grossMargin)],
+        [t("Oper. Margin"), pct(data.profitability.operatingMargin)],
+        [t("Net Margin"), pct(data.profitability.profitMargin)],
         ["ROE", pct(data.profitability.returnOnEquity)],
         ["ROA", pct(data.profitability.returnOnAssets)],
       ],
     ],
     [
-      "Growth",
+      t("Growth"),
       [
-        ["Revenue YoY", pct(data.growth.revenueGrowth), pctClass(data.growth.revenueGrowth)],
-        ["Earnings YoY", pct(data.growth.earningsGrowth), pctClass(data.growth.earningsGrowth)],
-        ["Earnings QoQ", pct(data.growth.earningsGrowthQuarterly), pctClass(data.growth.earningsGrowthQuarterly)],
+        [t("Revenue YoY"), pct(data.growth.revenueGrowth), pctClass(data.growth.revenueGrowth)],
+        [t("Earnings YoY"), pct(data.growth.earningsGrowth), pctClass(data.growth.earningsGrowth)],
+        [t("Earnings QoQ"), pct(data.growth.earningsGrowthQuarterly), pctClass(data.growth.earningsGrowthQuarterly)],
         ["1Y Return", pct(data.risk.priceReturn1y), pctClass(data.risk.priceReturn1y)],
       ],
     ],
     [
-      "Health / Per Share",
+      t("Health / Per Share"),
       [
-        ["Current Ratio", fmt(data.health.currentRatio)],
-        ["Quick Ratio", fmt(data.health.quickRatio)],
-        ["Debt/Equity", fmt(data.health.debtToEquity)],
+        [t("Current Ratio"), fmt(data.health.currentRatio)],
+        [t("Quick Ratio"), fmt(data.health.quickRatio)],
+        [t("Debt/Equity"), fmt(data.health.debtToEquity)],
         ["Beta", fmt(data.risk.beta)],
         ["EPS (ttm)", fmt(data.perShare.epsTtm)],
         ["EPS (fwd)", fmt(data.perShare.epsForward)],
-        ["Book/Share", fmt(data.perShare.bookValue)],
-        ["Cash/Share", fmt(data.perShare.cashPerShare)],
-        ["Div Yield", pct(data.dividends.dividendYield)],
-        ["Payout", pct(data.dividends.payoutRatio)],
+        [t("Book/Share"), fmt(data.perShare.bookValue)],
+        [t("Cash/Share"), fmt(data.perShare.cashPerShare)],
+        [t("Div Yield"), pct(data.dividends.dividendYield)],
+        [t("Payout"), pct(data.dividends.payoutRatio)],
       ],
     ],
   ];

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, fmtBig } from "../../lib/api";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { t } from "../../lib/i18n";
 
 type OptionRow = {
   strike: number | null; lastPrice: number | null; bid: number | null; ask: number | null;
@@ -32,7 +33,7 @@ export default function OptionsWidget({ widget }: { widget: WidgetInstance }) {
         <div className="dim">{(error as Error).message}</div>
       </div>
     );
-  if (isLoading || !data) return <div className="p-2 dim">Loading option chain…</div>;
+  if (isLoading || !data) return <div className="p-2 dim">{t("Loading option chain…")}</div>;
 
   const byStrike = new Map<number, { call?: OptionRow; put?: OptionRow }>();
   for (const c of data.calls) if (c.strike !== null) byStrike.set(c.strike, { ...byStrike.get(c.strike), call: c });
@@ -42,9 +43,9 @@ export default function OptionsWidget({ widget }: { widget: WidgetInstance }) {
   return (
     <div>
       <div className="flex gap-2 items-center p-1">
-        <span className="dim">Underlying</span>
+        <span className="dim">{t("Underlying")}</span>
         <span className="amber font-bold">{fmt(data.underlyingPrice)}</span>
-        <span className="dim ml-2">Expiry</span>
+        <span className="dim ml-2">{t("Expiry")}</span>
         <select
           value={expiry ?? data.selectedDate ?? ""}
           onChange={(e) => setExpiry(e.target.value)}
@@ -57,14 +58,14 @@ export default function OptionsWidget({ widget }: { widget: WidgetInstance }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th colSpan={5} className="!text-center up">CALLS</th>
-            <th className="!text-center">STRIKE</th>
-            <th colSpan={5} className="!text-center down">PUTS</th>
+            <th colSpan={5} className="!text-center up">{t("CALLS")}</th>
+            <th className="!text-center">{t("STRIKE")}</th>
+            <th colSpan={5} className="!text-center down">{t("PUTS")}</th>
           </tr>
           <tr>
-            <th>Last</th><th>Bid</th><th>Ask</th><th>Vol</th><th>OI · IV</th>
+            <th>{t("Last")}</th><th>{t("Bid")}</th><th>{t("Ask")}</th><th>{t("Vol")}</th><th>OI · IV</th>
             <th></th>
-            <th>Last</th><th>Bid</th><th>Ask</th><th>Vol</th><th>OI · IV</th>
+            <th>{t("Last")}</th><th>{t("Bid")}</th><th>{t("Ask")}</th><th>{t("Vol")}</th><th>OI · IV</th>
           </tr>
         </thead>
         <tbody>

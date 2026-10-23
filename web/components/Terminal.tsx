@@ -10,6 +10,11 @@ import { useTerminal } from "../store/terminal";
 export default function Terminal() {
   const setCommandOpen = useTerminal((s) => s.setCommandOpen);
   const addWidget = useTerminal((s) => s.addWidget);
+  const lang = useTerminal((s) => s.lang);
+
+  useEffect(() => {
+    document.documentElement.lang = lang === "pt" ? "pt-BR" : lang;
+  }, [lang]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -42,7 +47,8 @@ export default function Terminal() {
   }, [setCommandOpen, addWidget]);
 
   return (
-    <div className="flex flex-col h-screen">
+    // Re-mount on language change so every widget re-renders its labels.
+    <div key={lang} className="flex flex-col h-screen">
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />

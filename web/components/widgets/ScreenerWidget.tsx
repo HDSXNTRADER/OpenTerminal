@@ -5,6 +5,7 @@ import { useState } from "react";
 import { apiGet, fmt, fmtBig, pctClass } from "../../lib/api";
 import { useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
+import { t } from "../../lib/i18n";
 
 type Row = {
   symbol: string; name: string; price: number | null;
@@ -66,23 +67,23 @@ export default function ScreenerWidget() {
           ))}
         </div>
         <select value={sector} onChange={(e) => setSector(e.target.value)}>
-          <option value="">All sectors</option>
+          <option value="">{t("All sectors")}</option>
           {sectors.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-        <input className="w-20" placeholder="Chg% min" value={changeMin} onChange={(e) => setChangeMin(e.target.value)} />
-        <input className="w-24" placeholder="MCap min ($B)" value={marketCapMinB} onChange={(e) => setMarketCapMinB(e.target.value)} />
-        <input className="w-24" placeholder="Vol min (M)" value={volumeMinM} onChange={(e) => setVolumeMinM(e.target.value)} />
-        <span className="dim ml-auto">{isLoading ? "…" : `${data.length} results`}</span>
+        <input className="w-20" placeholder={t("Chg% min")} value={changeMin} onChange={(e) => setChangeMin(e.target.value)} />
+        <input className="w-24" placeholder={t("MCap min ($B)")} value={marketCapMinB} onChange={(e) => setMarketCapMinB(e.target.value)} />
+        <input className="w-24" placeholder={t("Vol min (M)")} value={volumeMinM} onChange={(e) => setVolumeMinM(e.target.value)} />
+        <span className="dim ml-auto">{isLoading ? "…" : t("{n} results", { n: data.length })}</span>
       </div>
-      {error && <div className="p-2 down">Error: {(error as Error).message}</div>}
+      {error && <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>}
       <table className="data-table">
         <thead>
           <tr>
             {th("symbol", "Sym")}
-            <th>Name</th>
-            <th>Sector</th>
+            <th>{t("Name")}</th>
+            <th>{t("Sector")}</th>
             {th("price", "Last")}
             {th("changePercent", "Chg%")}
             {th("volume", "Vol")}

@@ -15,6 +15,7 @@ import {
 import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
 import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { locale, t } from "../../lib/i18n";
 
 const RANGES = ["1D", "5D", "1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"] as const;
 // "AUTO" lets the server pick a bar size that suits the range (the original behaviour).
@@ -197,6 +198,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
 
     const chart = createChart(el, {
       layout: { background: { color: "#0a0a0a" }, textColor: "#808080", fontSize: 10, attributionLogo: false },
+      localization: { locale: locale() },
       grid: { vertLines: { color: "#1a1a1a" }, horzLines: { color: "#1a1a1a" } },
       crosshair: { mode: 0 },
       timeScale: { borderColor: "#262626", timeVisible: intraday, secondsVisible: mins !== null && mins < 1 },
@@ -310,12 +312,12 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex gap-1 p-1 flex-wrap shrink-0">
-        <span className="dim self-center text-[10px]" title="Timeframe: how long each candle lasts">TF</span>
+        <span className="dim self-center text-[10px]" title={t("Timeframe: how long each candle lasts")}>TF</span>
         {INTERVALS.map((iv) => (
           <button
             key={iv}
             className={`term-btn ${interval === iv ? "active" : ""}`}
-            title={iv === "AUTO" ? "Bar size picked automatically for the range" : iv === "30s" ? "30-second bars (crypto only)" : `${iv} bars`}
+            title={iv === "AUTO" ? t("Bar size picked automatically for the range") : iv === "30s" ? t("30-second bars (crypto only)") : t("{iv} bars", { iv })}
             onClick={() => setInterval_(iv)}
           >
             {iv}
@@ -330,12 +332,12 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
           }}
           onKeyDown={(e) => e.key === "Enter" && applyCustom()}
           onBlur={() => customDraft && applyCustom()}
-          placeholder="custom: 3m, 2h, 3D"
-          title="Any timeframe: a number plus s, m, h, D, W or M (e.g. 10s, 3m, 45m, 2h, 3D, 2W, 3M). Press Enter."
+          placeholder={t("custom: 3m, 2h, 3D")}
+          title={t("Any timeframe: a number plus s, m, h, D, W or M (e.g. 10s, 3m, 45m, 2h, 3D, 2W, 3M). Press Enter.")}
           className={`w-[92px] bg-[var(--panel-2)] border px-1 text-[11px] ${customError ? "border-[var(--down)]" : "border-[var(--border)]"}`}
         />
         <span className="w-2" />
-        <span className="dim self-center text-[10px]" title="How much history to show">RANGE</span>
+        <span className="dim self-center text-[10px]" title={t("How much history to show")}>{t("RANGE")}</span>
         {RANGES.map((r) => {
           const ok = rangeAllowed(r, interval);
           return (
@@ -343,7 +345,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
               key={r}
               className={`term-btn ${range === r ? "active" : ""} ${ok ? "" : "opacity-30"}`}
               disabled={!ok}
-              title={ok ? undefined : `Not available with ${interval} bars`}
+              title={ok ? undefined : t("Not available with {iv} bars", { iv: interval })}
               onClick={() => setRange(r)}
             >
               {r}
@@ -351,9 +353,9 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
           );
         })}
         <span className="w-2" />
-        {CHART_TYPES.map((t) => (
-          <button key={t} className={`term-btn ${chartType === t ? "active" : ""}`} onClick={() => setChartType(t)}>
-            {t.toUpperCase()}
+        {CHART_TYPES.map((ct) => (
+          <button key={ct} className={`term-btn ${chartType === ct ? "active" : ""}`} onClick={() => setChartType(ct)}>
+            {t(ct.toUpperCase())}
           </button>
         ))}
         <span className="w-2" />
@@ -363,7 +365,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
           </button>
         ))}
       </div>
-      {error && <div className="p-2 down">Error: {(error as Error).message}</div>}
+      {error && <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>}
       <div className="relative flex-1 min-h-0">
         {legend && (
           <div className="absolute top-1 left-2 z-10 flex flex-col gap-0.5 text-[11px] pointer-events-none bg-[rgba(10,10,10,0.7)] px-2 py-1 rounded max-w-[95%]">
