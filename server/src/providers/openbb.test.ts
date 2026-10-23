@@ -148,4 +148,12 @@ describe("openbb provider", () => {
     expect(f.health.debtToEquity).toBe(1.5);
     expect(f.risk.beta).toBe(1.2);
   });
+
+  it("reads offset-less intraday stamps as New York time, in and out of DST", async () => {
+    const obb = await load();
+    const iso = (raw: string) => new Date(obb.parseTimestamp(raw)).toISOString();
+    expect(iso("2026-10-23T10:50:00")).toBe("2026-10-23T14:50:00.000Z");
+    expect(iso("2026-01-15T09:30:00")).toBe("2026-01-15T14:30:00.000Z");
+    expect(iso("2026-10-23T10:50:00-04:00")).toBe("2026-10-23T14:50:00.000Z");
+  });
 });
