@@ -22,6 +22,11 @@ const ITEMS: Array<{ type: WidgetType; label: string; key: string }> = [
   { type: "tv", label: "LIVE TV", key: "" },
   { type: "recap", label: "MARKET RECAP", key: "" },
   { type: "alerts", label: "PRICE ALERTS", key: "" },
+  { type: "brazil", label: "BRAZIL", key: "" },
+  { type: "scanner", label: "SCANNER", key: "" },
+  { type: "seasonality", label: "SEASONALITY", key: "" },
+  { type: "correlation", label: "CORRELATION", key: "" },
+  { type: "brief", label: "AI BRIEF", key: "" },
 ];
 
 export default function Sidebar() {

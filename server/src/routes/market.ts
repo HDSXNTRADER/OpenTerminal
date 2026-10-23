@@ -14,6 +14,7 @@ import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
 import * as openbb from "../providers/openbb.js";
+import * as bcb from "../providers/bcb.js";
 import { isIntraday, isSubMinute, lastSession, parseInterval, rangeStart, resample, type Interval } from "../timeframe.js";
 
 export const marketRouter = Router();
@@ -328,6 +329,16 @@ function yahooRange(rangeKey: string): { range: string; interval: string } {
   };
   return map[rangeKey] ?? map["6M"];
 }
+
+// ---- Brazil: policy rates from the central bank (Selic, CDI, IPCA 12m) ----
+
+marketRouter.get("/brazil/rates", async (req, res) => {
+  try {
+    res.json(await cached("bcb:rates", 3_600_000, () => tracked("bcb", () => bcb.rates())));
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
 
 // ---- fundamentals (OpenBB only: valuation, margins, growth, balance-sheet health) ----
 

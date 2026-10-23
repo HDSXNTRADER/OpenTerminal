@@ -21,6 +21,7 @@ import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/t
 import { locale, t } from "../../lib/i18n";
 import { normalizeSymbol } from "../../lib/symbol";
 import { INTERVALS, RANGES, intervalMinutes, normalizeInterval, rangeAllowed, type Range } from "../../lib/timeframes";
+import VolumeProfile from "./VolumeProfile";
 import DrawingLayer, { DRAW_TOOLS, type ChartApi, type DrawTool } from "./ChartDrawings";
 import { chartColors } from "../../lib/theme";
 
@@ -28,7 +29,7 @@ import { chartColors } from "../../lib/theme";
 let keyboardChart: string | null = null;
 
 const CHART_TYPES = ["candles", "bars", "line", "area"] as const;
-const INDICATORS = ["SMA20", "SMA50", "SMA200", "EMA20", "VWAP", "BOLL", "RSI", "MACD"] as const;
+const INDICATORS = ["SMA20", "SMA50", "SMA200", "EMA20", "VWAP", "BOLL", "RSI", "MACD", "VP"] as const;
 
 type ChartType = (typeof CHART_TYPES)[number];
 type Indicator = (typeof INDICATORS)[number];
@@ -402,7 +403,12 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
         ))}
         <span className="w-2" />
         {INDICATORS.map((ind) => (
-          <button key={ind} className={`term-btn ${active.has(ind) ? "active" : ""}`} onClick={() => toggleIndicator(ind)}>
+          <button
+            key={ind}
+            className={`term-btn ${active.has(ind) ? "active" : ""}`}
+            title={ind === "VP" ? t("Volume Profile: volume traded at each price, for the bars on screen") : undefined}
+            onClick={() => toggleIndicator(ind)}
+          >
             {ind}
           </button>
         ))}
@@ -477,6 +483,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
           </div>
         )}
         <div ref={containerRef} className={`w-full h-full ${tool ? "cursor-crosshair" : ""}`} />
+        {candles && active.has("VP") && <VolumeProfile api={api} candles={candles} />}
         {candles && <DrawingLayer api={api} candles={candles} symbol={symbol} tool={tool} onDone={() => setTool(null)} />}
         {typed && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-[var(--panel-2)] border border-[var(--amber)] px-4 py-2 text-center pointer-events-none">

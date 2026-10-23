@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { t } from "../lib/i18n";
+import Presentation from "./Presentation";
 import { exportBackup, useTerminal } from "../store/terminal";
 
 /** Tabs for saved layouts ("Day trade", "Swing"...). Double-click a tab to rename it. */
@@ -98,6 +99,7 @@ export default function WorkspaceTabs() {
         + {t("New layout")}
       </button>
       <span className="ml-auto" />
+      <Presentation />
       <button className="px-3 dim hover:text-[var(--amber)]" title={t("Save layouts, lists, drawings and alerts to a file")} onClick={doExport}>
         ⤓ {t("Export")}
       </button>

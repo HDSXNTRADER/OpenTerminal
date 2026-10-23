@@ -24,6 +24,11 @@ import TvWidget from "./widgets/TvWidget";
 import RecapWidget from "./widgets/RecapWidget";
 import AlertsWidget from "./widgets/AlertsWidget";
 import MultiChartWidget from "./widgets/MultiChartWidget";
+import BrazilWidget from "./widgets/BrazilWidget";
+import SeasonalityWidget from "./widgets/SeasonalityWidget";
+import CorrelationWidget from "./widgets/CorrelationWidget";
+import ScannerWidget from "./widgets/ScannerWidget";
+import BriefWidget from "./widgets/BriefWidget";
 import WidgetErrorBoundary from "./WidgetErrorBoundary";
 import { t } from "../lib/i18n";
 
@@ -49,6 +54,11 @@ function WidgetBody({ widget }: { widget: WidgetInstance }) {
     case "recap": return <RecapWidget />;
     case "alerts": return <AlertsWidget />;
     case "multichart": return <MultiChartWidget widget={widget} />;
+    case "brazil": return <BrazilWidget />;
+    case "seasonality": return <SeasonalityWidget widget={widget} />;
+    case "correlation": return <CorrelationWidget />;
+    case "scanner": return <ScannerWidget />;
+    case "brief": return <BriefWidget widget={widget} />;
   }
 }
 
@@ -103,10 +113,11 @@ const TITLES: Record<string, string> = {
   heatmap: "Heatmap", screener: "Screener", crypto: "Crypto",
   macro: "Macro / Indexes", options: "Option Chain", portfolio: "Portfolio", ai: "AI Assistant",
   calendar: "Calendar", insider: "Insider Transactions", fundamentals: "Fundamentals (OpenBB)", tv: "Live TV", recap: "Market Recap",
-  alerts: "Price Alerts", multichart: "Multi-Timeframe",
+  alerts: "Price Alerts", multichart: "Multi-Timeframe", brazil: "Brazil", seasonality: "Seasonality",
+  correlation: "Correlation", scanner: "Pattern Scanner", brief: "Daily AI Brief",
 };
 
-const SYMBOL_AWARE = new Set(["quote", "chart", "news", "options", "insider", "fundamentals", "multichart"]);
+const SYMBOL_AWARE = new Set(["quote", "chart", "news", "options", "insider", "fundamentals", "multichart", "seasonality"]);
 
 function Panel({ widget: w }: { widget: WidgetInstance }) {
   const removeWidget = useTerminal((s) => s.removeWidget);

@@ -15,6 +15,7 @@ export default function Terminal() {
   const lang = useTerminal((s) => s.lang);
   const theme = useTerminal((s) => s.theme);
   const accent = useTerminal((s) => s.accent);
+  const presenting = useTerminal((s) => s.presenting);
 
   useEffect(() => {
     document.documentElement.lang = lang === "pt" ? "pt-BR" : lang;
@@ -57,9 +58,9 @@ export default function Terminal() {
   return (
     // Re-mount on language/theme change so every widget re-renders its labels and chart colours.
     <div key={`${lang}-${theme}-${accent}`} className="flex flex-col h-screen">
-      <TopBar />
+      {!presenting && <TopBar />}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+        {!presenting && <Sidebar />}
         <main className="flex-1 flex flex-col min-w-0">
           <WorkspaceTabs />
           <div className="flex-1 overflow-auto min-h-0">

@@ -26,7 +26,12 @@ export type WidgetType =
   | "tv"
   | "recap"
   | "alerts"
-  | "multichart";
+  | "multichart"
+  | "brazil"
+  | "seasonality"
+  | "correlation"
+  | "scanner"
+  | "brief";
 
 export type WidgetInstance = {
   id: string;
@@ -85,6 +90,9 @@ type TerminalState = {
   /** Widget shown full screen, or null. Not saved. */
   maximized: string | null;
   setMaximized: (id: string | null) => void;
+  /** Presentation mode: full screen, cycling through the saved layouts every N seconds (0 = off). Not saved. */
+  presenting: number;
+  setPresenting: (seconds: number) => void;
   workspaces: Workspace[];
   activeWorkspace: string;
   addWorkspace: (name: string) => void;
@@ -199,6 +207,11 @@ const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   recap: { w: 5, h: 12 },
   alerts: { w: 4, h: 8 },
   multichart: { w: 12, h: 16 },
+  brazil: { w: 5, h: 12 },
+  seasonality: { w: 8, h: 11 },
+  correlation: { w: 7, h: 11 },
+  scanner: { w: 7, h: 10 },
+  brief: { w: 6, h: 12 },
 };
 
 export const useTerminal = create<TerminalState>()(
@@ -263,6 +276,8 @@ export const useTerminal = create<TerminalState>()(
       resetWorkspace: () => set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT, maximized: null }),
       maximized: null,
       setMaximized: (id) => set({ maximized: id }),
+      presenting: 0,
+      setPresenting: (seconds) => set({ presenting: seconds }),
       workspaces: [{ id: "ws-main", name: "Principal", widgets: [], layout: [] }],
       activeWorkspace: "ws-main",
       addWorkspace: (name) => {
@@ -383,7 +398,7 @@ export const useTerminal = create<TerminalState>()(
     {
       name: "openterminal-workspace",
       // Transient UI state stays out of storage.
-      partialize: ({ commandOpen: _c, maximized: _m, ...rest }) => rest,
+      partialize: ({ commandOpen: _c, maximized: _m, presenting: _p, ...rest }) => rest,
       version: 1,
       migrate: (persisted, version) => {
         const st = persisted as Partial<TerminalState>;
