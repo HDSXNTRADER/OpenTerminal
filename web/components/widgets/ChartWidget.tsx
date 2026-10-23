@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
@@ -9,18 +9,28 @@ import {
   HistogramSeries,
   AreaSeries,
   BarSeries,
+  PriceScaleMode,
   type IChartApi,
+  type ISeriesApi,
+  type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
-import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { locale, t } from "../../lib/i18n";
+import { normalizeSymbol } from "../../lib/symbol";
+import { INTERVALS, RANGES, intervalMinutes, normalizeInterval, rangeAllowed, type Range } from "../../lib/timeframes";
+import VolumeProfile from "./VolumeProfile";
+import DrawingLayer, { DRAW_TOOLS, type ChartApi, type DrawTool } from "./ChartDrawings";
+import { chartColors } from "../../lib/theme";
 
-const RANGES = ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"] as const;
+// The chart the user last pointed at or clicked receives typed timeframe shortcuts.
+let keyboardChart: string | null = null;
+
 const CHART_TYPES = ["candles", "bars", "line", "area"] as const;
-const INDICATORS = ["SMA20", "SMA50", "SMA200", "EMA20", "VWAP", "BOLL", "RSI", "MACD"] as const;
+const INDICATORS = ["SMA20", "SMA50", "SMA200", "EMA20", "VWAP", "BOLL", "RSI", "MACD", "VP"] as const;
 
-type Range = (typeof RANGES)[number];
 type ChartType = (typeof CHART_TYPES)[number];
 type Indicator = (typeof INDICATORS)[number];
 
@@ -32,20 +42,107 @@ const INDICATOR_COLOR: Record<string, string> = {
   VWAP: "#80cbc4", RSI: "#ff9900", BOLL: "#ff9900", MACD: "#4fc3f7",
 };
 
+type ChartSettings = { range?: Range; interval?: string; chartType?: ChartType; indicators?: Indicator[]; compare?: string[] };
+
+const COMPARE_COLORS = ["#4fc3f7", "#ba68c8", "#ffd966", "#80cbc4", "#ff8a65"];
+
 export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   const symbol = useWidgetSymbol(widget);
-  const [range, setRange] = useState<Range>("6M");
-  const [chartType, setChartType] = useState<ChartType>("candles");
-  const [active, setActive] = useState<Set<Indicator>>(new Set(["SMA20"]));
+  const setWidgetSettings = useTerminal((s) => s.setWidgetSettings);
+  // Timeframe, chart type and indicators are saved with the widget, so they survive reloads.
+  const saved = (widget.settings ?? {}) as ChartSettings;
+  const range: Range = saved.range && RANGES.includes(saved.range) ? saved.range : "6M";
+  const interval = saved.interval ?? "AUTO";
+  const chartType: ChartType = saved.chartType ?? "candles";
+  const active = useMemo(() => new Set<Indicator>(saved.indicators ?? ["SMA20"]), [saved.indicators]);
+  const compare = useMemo(() => (saved.compare ?? []).filter((c) => c !== symbol), [saved.compare, symbol]);
+  const [compareDraft, setCompareDraft] = useState("");
+  const save = (patch: ChartSettings) => setWidgetSettings(widget.id, patch);
+  const setRange = (r: Range) => save({ range: r });
+  const setChartType = (t: ChartType) => save({ chartType: t });
+  const setInterval_ = (iv: string) => {
+    // Jump to the longest range that still works for the new bar size.
+    const ok = rangeAllowed(range, iv) ? range : [...RANGES].reverse().find((r) => rangeAllowed(r, iv)) ?? "1D";
+    save({ interval: iv, range: ok });
+  };
+  const [customDraft, setCustomDraft] = useState("");
+  const [customError, setCustomError] = useState(false);
+  const mins = intervalMinutes(interval);
+  const intraday = interval === "AUTO" ? range === "1D" || range === "5D" : mins !== null && mins < 1440;
   const [legend, setLegend] = useState<Candle | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [api, setApi] = useState<ChartApi | null>(null);
+  const [tool, setTool] = useState<DrawTool>(null);
+  const hasDrawings = useTerminal((s) => (s.drawings[symbol]?.length ?? 0) > 0);
+  const clearDrawings = useTerminal((s) => s.clearDrawings);
+  const [typed, setTyped] = useState("");
+
+  // TradingView-style shortcuts: point at a chart and type "5" Enter (5m), "1h", "4h", "1D", "1W"...
+  // Esc cancels typing or the active drawing tool.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (keyboardChart !== widget.id || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (e.key === "Escape") {
+        setTyped("");
+        setTool(null);
+        return;
+      }
+      if (e.key === "Enter" && typed) {
+        e.preventDefault();
+        const iv = normalizeInterval(/^\d+$/.test(typed) ? `${typed}m` : typed);
+        if (iv) setInterval_(iv);
+        setTyped("");
+        return;
+      }
+      if (e.key === "Backspace" && typed) {
+        setTyped((v) => v.slice(0, -1));
+        return;
+      }
+      if (/^[0-9]$/.test(e.key) || (typed && /^[smhdwMSHDW]$/.test(e.key) && /^\d+$/.test(typed))) {
+        e.preventDefault();
+        setTyped((v) => (v + e.key).slice(0, 6));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (!typed) return;
+    const timer = setTimeout(() => setTyped(""), 4000);
+    return () => clearTimeout(timer);
+  }, [typed]);
 
   const { data: candles, error } = useQuery({
-    queryKey: ["history", symbol, range],
-    queryFn: () => apiGet<Candle[]>(`/api/history/${encodeURIComponent(symbol)}?range=${range}`),
-    refetchInterval: range === "1D" ? 8_000 : 60_000,
+    queryKey: ["history", symbol, range, interval],
+    queryFn: () =>
+      apiGet<Candle[]>(
+        `/api/history/${encodeURIComponent(symbol)}?range=${range}` +
+          (interval === "AUTO" ? "" : `&interval=${encodeURIComponent(interval)}`)
+      ),
+    refetchInterval:
+      interval === "AUTO" ? (range === "1D" ? 8_000 : 60_000) : mins !== null && mins <= 5 ? 8_000 : mins !== null && mins < 1440 ? 30_000 : 60_000,
   });
+
+  const compareQueries = useQueries({
+    queries: compare.map((c) => ({
+      queryKey: ["history", c, range, interval],
+      queryFn: () =>
+        apiGet<Candle[]>(
+          `/api/history/${encodeURIComponent(c)}?range=${range}` +
+            (interval === "AUTO" ? "" : `&interval=${encodeURIComponent(interval)}`)
+        ),
+      refetchInterval: 60_000,
+    })),
+  });
+  const compareKey = compareQueries.map((q) => q.dataUpdatedAt).join(",");
+  const compareSeries = useMemo(
+    () => compare.map((c, i) => ({ symbol: c, data: compareQueries[i]?.data })),
+    [compare.join(","), compareKey] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Fast time -> candle lookup for the crosshair legend, independent of chart type.
   const byTime = useMemo(() => {
@@ -130,12 +227,15 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     const el = containerRef.current;
     if (!el || !candles || candles.length === 0) return;
 
+    const colors = chartColors();
     const chart = createChart(el, {
-      layout: { background: { color: "#0a0a0a" }, textColor: "#808080", fontSize: 10, attributionLogo: false },
-      grid: { vertLines: { color: "#1a1a1a" }, horzLines: { color: "#1a1a1a" } },
+      layout: { background: { color: colors.background }, textColor: colors.text, fontSize: 10, attributionLogo: false },
+      localization: { locale: locale() },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       crosshair: { mode: 0 },
-      timeScale: { borderColor: "#262626", timeVisible: range === "1D" || range === "5D" },
-      rightPriceScale: { borderColor: "#262626" },
+      timeScale: { borderColor: colors.border, timeVisible: intraday, secondsVisible: mins !== null && mins < 1 },
+      // Comparing assets: every series is shown as % change from the first visible bar.
+      rightPriceScale: { borderColor: colors.border, mode: compareSeries.length > 0 ? PriceScaleMode.Percentage : PriceScaleMode.Normal },
       autoSize: true,
       // Mouse-wheel is left free for page scrolling — zoom via drag, pinch, or the range buttons instead.
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
@@ -143,28 +243,25 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     });
     chartRef.current = chart;
 
-    const upColor = "#00c853";
-    const downColor = "#ff3d3d";
+    const upColor = colors.up;
+    const downColor = colors.down;
 
+    let main: ISeriesApi<SeriesType>;
     if (chartType === "candles") {
-      chart
-        .addSeries(CandlestickSeries, {
-          upColor, downColor, borderUpColor: upColor, borderDownColor: downColor,
-          wickUpColor: upColor, wickDownColor: downColor,
-        })
-        .setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
+      main = chart.addSeries(CandlestickSeries, {
+        upColor, downColor, borderUpColor: upColor, borderDownColor: downColor,
+        wickUpColor: upColor, wickDownColor: downColor,
+      });
+      main.setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
     } else if (chartType === "bars") {
-      chart
-        .addSeries(BarSeries, { upColor, downColor })
-        .setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
+      main = chart.addSeries(BarSeries, { upColor, downColor });
+      main.setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
     } else if (chartType === "line") {
-      chart
-        .addSeries(LineSeries, { color: "#ff9900", lineWidth: 1 })
-        .setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
+      main = chart.addSeries(LineSeries, { color: colors.accent, lineWidth: 1 });
+      main.setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
     } else {
-      chart
-        .addSeries(AreaSeries, { lineColor: "#ff9900", topColor: "rgba(255,153,0,0.25)", bottomColor: "rgba(255,153,0,0)" })
-        .setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
+      main = chart.addSeries(AreaSeries, { lineColor: colors.accent, topColor: `${colors.accent}40`, bottomColor: `${colors.accent}00` });
+      main.setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
     }
 
     // volume histogram on its own scale at the bottom of the main pane
@@ -208,6 +305,13 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
       );
     }
 
+    compareSeries.forEach((cs, i) => {
+      if (!cs.data?.length) return;
+      chart
+        .addSeries(LineSeries, { color: COMPARE_COLORS[i % COMPARE_COLORS.length], lineWidth: 2, priceLineVisible: false, title: cs.symbol })
+        .setData(cs.data.map((c) => ({ time: ts(c.time), value: c.close })));
+    });
+
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
         setLegend(candles[candles.length - 1]);
@@ -218,45 +322,148 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     });
 
     chart.timeScale().fitContent();
+    setApi({ chart, series: main });
     return () => {
+      setApi(null);
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, chartType, indicatorData, range, byTime]);
+  }, [candles, chartType, indicatorData, intraday, mins, byTime, compareSeries]);
 
-  const toggleIndicator = (ind: Indicator) =>
-    setActive((prev) => {
-      const next = new Set(prev);
-      if (next.has(ind)) next.delete(ind);
-      else next.add(ind);
-      return next;
-    });
+  const toggleIndicator = (ind: Indicator) => {
+    const next = new Set(active);
+    if (next.has(ind)) next.delete(ind);
+    else next.add(ind);
+    save({ indicators: INDICATORS.filter((i) => next.has(i)) });
+  };
+
+  const applyCustom = () => {
+    const iv = normalizeInterval(customDraft);
+    if (!iv) {
+      setCustomError(true);
+      return;
+    }
+    setCustomError(false);
+    setCustomDraft("");
+    setInterval_(iv);
+  };
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full"
+      onMouseEnter={() => (keyboardChart = widget.id)}
+      onMouseDown={() => (keyboardChart = widget.id)}
+    >
       <div className="flex gap-1 p-1 flex-wrap shrink-0">
-        {RANGES.map((r) => (
-          <button key={r} className={`term-btn ${range === r ? "active" : ""}`} onClick={() => setRange(r)}>
-            {r}
+        <span className="dim self-center text-[10px]" title={t("Timeframe: how long each candle lasts")}>TF</span>
+        {INTERVALS.map((iv) => (
+          <button
+            key={iv}
+            className={`term-btn ${interval === iv ? "active" : ""}`}
+            title={iv === "AUTO" ? t("Bar size picked automatically for the range") : iv === "30s" ? t("30-second bars (crypto only)") : t("{iv} bars", { iv })}
+            onClick={() => setInterval_(iv)}
+          >
+            {iv}
           </button>
         ))}
+        {!(INTERVALS as readonly string[]).includes(interval) && <button className="term-btn active">{interval}</button>}
+        <input
+          value={customDraft}
+          onChange={(e) => {
+            setCustomDraft(e.target.value);
+            setCustomError(false);
+          }}
+          onKeyDown={(e) => e.key === "Enter" && applyCustom()}
+          onBlur={() => customDraft && applyCustom()}
+          placeholder={t("custom: 3m, 2h, 3D")}
+          title={t("Any timeframe: a number plus s, m, h, D, W or M (e.g. 10s, 3m, 45m, 2h, 3D, 2W, 3M). Press Enter.")}
+          className={`w-[92px] bg-[var(--panel-2)] border px-1 text-[11px] ${customError ? "border-[var(--down)]" : "border-[var(--border)]"}`}
+        />
         <span className="w-2" />
-        {CHART_TYPES.map((t) => (
-          <button key={t} className={`term-btn ${chartType === t ? "active" : ""}`} onClick={() => setChartType(t)}>
-            {t.toUpperCase()}
+        <span className="dim self-center text-[10px]" title={t("How much history to show")}>{t("RANGE")}</span>
+        {RANGES.map((r) => {
+          const ok = rangeAllowed(r, interval);
+          return (
+            <button
+              key={r}
+              className={`term-btn ${range === r ? "active" : ""} ${ok ? "" : "opacity-30"}`}
+              disabled={!ok}
+              title={ok ? undefined : t("Not available with {iv} bars", { iv: interval })}
+              onClick={() => setRange(r)}
+            >
+              {r}
+            </button>
+          );
+        })}
+        <span className="w-2" />
+        {CHART_TYPES.map((ct) => (
+          <button key={ct} className={`term-btn ${chartType === ct ? "active" : ""}`} onClick={() => setChartType(ct)}>
+            {t(ct.toUpperCase())}
           </button>
         ))}
         <span className="w-2" />
         {INDICATORS.map((ind) => (
-          <button key={ind} className={`term-btn ${active.has(ind) ? "active" : ""}`} onClick={() => toggleIndicator(ind)}>
+          <button
+            key={ind}
+            className={`term-btn ${active.has(ind) ? "active" : ""}`}
+            title={ind === "VP" ? t("Volume Profile: volume traded at each price, for the bars on screen") : undefined}
+            onClick={() => toggleIndicator(ind)}
+          >
             {ind}
           </button>
         ))}
+        <span className="w-2" />
+        {DRAW_TOOLS.map((dt) => (
+          <button
+            key={dt.id}
+            className={`term-btn ${tool === dt.id ? "active" : ""}`}
+            title={t(dt.label)}
+            onClick={() => setTool(tool === dt.id ? null : dt.id)}
+          >
+            {dt.icon}
+          </button>
+        ))}
+        {(
+          <button
+            className={`term-btn ${hasDrawings ? "" : "opacity-30"}`}
+            disabled={!hasDrawings}
+            title={t("Delete all drawings on {s}", { s: symbol })}
+            onClick={() => window.confirm(t("Delete all drawings on {s}", { s: symbol }) + "?") && clearDrawings(symbol)}
+          >
+            🗑
+          </button>
+        )}
       </div>
-      {error && <div className="p-2 down">Error: {(error as Error).message}</div>}
+      {(
+        <div className="flex gap-1 px-1 pb-1 items-center flex-wrap shrink-0 text-[11px]">
+          <input
+            value={compareDraft}
+            onChange={(e) => setCompareDraft(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              const sym = normalizeSymbol(compareDraft);
+              if (sym && sym !== symbol && !compare.includes(sym)) save({ compare: [...compare, sym].slice(0, 5) });
+              setCompareDraft("");
+            }}
+            placeholder={t("+ compare (e.g. SPY)")}
+            title={t("Add another asset to compare performance in %")}
+            className="w-40 bg-[var(--panel-2)] border border-[var(--border)] px-1"
+          />
+          {compare.map((c, i) => (
+            <span key={c} className="flex items-center gap-1 border border-[var(--border)] px-1" style={{ color: COMPARE_COLORS[i % COMPARE_COLORS.length] }}>
+              {c}
+              <button className="dim hover:text-[var(--down)]" onClick={() => save({ compare: compare.filter((x) => x !== c) })}>
+                ✕
+              </button>
+            </span>
+          ))}
+          {compare.length > 0 && <span className="dim">{t("Scale in % from the first visible bar")}</span>}
+        </div>
+      )}
+      {error && <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>}
       <div className="relative flex-1 min-h-0">
         {legend && (
-          <div className="absolute top-1 left-2 z-10 flex flex-col gap-0.5 text-[11px] pointer-events-none bg-[rgba(10,10,10,0.7)] px-2 py-1 rounded max-w-[95%]">
+          <div className="absolute top-1 left-2 z-10 flex flex-col gap-0.5 text-[11px] pointer-events-none bg-[var(--overlay)] px-2 py-1 rounded max-w-[95%]">
             <div className="flex gap-3">
               <span className="dim">O <span className="text-[var(--text)]">{fmt(legend.open)}</span></span>
               <span className="dim">H <span className="up">{fmt(legend.high)}</span></span>
@@ -275,7 +482,15 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
             )}
           </div>
         )}
-        <div ref={containerRef} className="w-full h-full" />
+        <div ref={containerRef} className={`w-full h-full ${tool ? "cursor-crosshair" : ""}`} />
+        {candles && active.has("VP") && <VolumeProfile api={api} candles={candles} />}
+        {candles && <DrawingLayer api={api} candles={candles} symbol={symbol} tool={tool} onDone={() => setTool(null)} />}
+        {typed && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-[var(--panel-2)] border border-[var(--amber)] px-4 py-2 text-center pointer-events-none">
+            <div className="amber text-2xl font-bold">{typed}</div>
+            <div className="dim text-[10px]">{t("Enter = change timeframe · Esc = cancel")}</div>
+          </div>
+        )}
       </div>
     </div>
   );

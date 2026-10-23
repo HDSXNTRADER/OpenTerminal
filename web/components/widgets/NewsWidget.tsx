@@ -5,6 +5,7 @@ import { useState } from "react";
 import { apiGet } from "../../lib/api";
 import { isSafeHttpUrl } from "../../lib/links";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { t } from "../../lib/i18n";
 
 type NewsItem = { title: string; link: string; publisher: string; publishedAt: string | null };
 
@@ -25,10 +26,10 @@ export default function NewsWidget({ widget }: { widget: WidgetInstance }) {
           {symbol}
         </button>
         <button className={`term-btn ${mode === "global" ? "active" : ""}`} onClick={() => setMode("global")}>
-          GLOBAL
+          {t("GLOBAL")}
         </button>
       </div>
-      {isLoading && <div className="p-2 dim">Loading news…</div>}
+      {isLoading && <div className="p-2 dim">{t("Loading news…")}</div>}
       {data.map((n, i) => {
         const body = (
           <>
@@ -39,7 +40,7 @@ export default function NewsWidget({ widget }: { widget: WidgetInstance }) {
             </div>
           </>
         );
-        const className = "block px-2 py-1 border-b border-[#161616] hover:bg-[#161616]";
+        const className = "block px-2 py-1 border-b border-[var(--line)] hover:bg-[var(--hover)]";
         return isSafeHttpUrl(n.link) ? (
           <a key={i} href={n.link} target="_blank" rel="noreferrer" className={className}>
             {body}

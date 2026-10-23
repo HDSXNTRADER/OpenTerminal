@@ -11,7 +11,38 @@
   --down: #ff3d3d;
   --text: #d9d9d9;
   --text-dim: #808080;
+  --line: #161616;
+  --hover: #1a1a1a;
+  --select: #1f1a10;
+  --overlay: rgba(10, 10, 10, 0.8);
+  --scroll: #333333;
 }
+
+/* Light theme: same layout, paper-like colours. */
+:root[data-theme="light"] {
+  --bg: #e9e9e6;
+  --panel: #ffffff;
+  --panel-2: #f3f3f0;
+  --border: #d0d0cc;
+  --up: #008a3a;
+  --down: #d32020;
+  --text: #1c1c1c;
+  --text-dim: #6b6b6b;
+  --line: #ececea;
+  --hover: #f0ede6;
+  --select: #fff1db;
+  --overlay: rgba(255, 255, 255, 0.85);
+  --scroll: #c4c4c0;
+}
+
+/* Accent colour (titles, active buttons, highlights). Amber is the default. */
+:root[data-accent="blue"] { --amber: #2f9bff; --amber-dim: #1f69ad; }
+:root[data-accent="green"] { --amber: #19c37d; --amber-dim: #128a59; }
+:root[data-accent="purple"] { --amber: #b07cff; --amber-dim: #7a52b8; }
+:root[data-theme="light"][data-accent="amber"] { --amber: #d97a00; --amber-dim: #a65d00; }
+:root[data-theme="light"][data-accent="blue"] { --amber: #1170d6; --amber-dim: #0c4f99; }
+:root[data-theme="light"][data-accent="green"] { --amber: #0d8f57; --amber-dim: #0a6b41; }
+:root[data-theme="light"][data-accent="purple"] { --amber: #7b3fe4; --amber-dim: #5a2da8; }
 
 html,
 body {
@@ -30,7 +61,7 @@ body {
   background: var(--panel);
 }
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--scroll);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--amber-dim);
@@ -98,11 +129,11 @@ table.data-table td:first-child {
 table.data-table td {
   text-align: right;
   padding: 2px 6px;
-  border-bottom: 1px solid #161616;
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 table.data-table tbody tr:hover {
-  background: #1a1a1a;
+  background: var(--hover);
   cursor: pointer;
 }
 
@@ -150,4 +181,62 @@ button.term-btn.active {
 }
 .react-grid-item > .react-resizable-handle::after {
   border-color: var(--amber-dim) !important;
+}
+
+/* Resize from any edge or corner. Edge handles are invisible full-length
+   strips; corner markers only show while hovering a widget. */
+.react-grid-item > .react-resizable-handle {
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.react-grid-item:hover > .react-resizable-handle,
+.react-grid-item.resizing > .react-resizable-handle {
+  opacity: 1;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s {
+  left: 10px;
+  right: 10px;
+  width: auto;
+  height: 6px;
+  margin-left: 0;
+  transform: none;
+  background: none;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n { top: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s { bottom: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w {
+  top: 10px;
+  bottom: 10px;
+  height: auto;
+  width: 6px;
+  margin-top: 0;
+  transform: none;
+  background: none;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e { right: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w { left: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w::after {
+  display: none;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n:hover,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s:hover,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e:hover,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w:hover {
+  background: var(--amber-dim);
+  opacity: 0.6;
+}
+
+/* A widget reached from the command line blinks its border. */
+.widget-focus {
+  animation: widget-focus-anim 1.2s ease-out;
+}
+@keyframes widget-focus-anim {
+  0%, 40% { box-shadow: 0 0 0 2px var(--amber); }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }

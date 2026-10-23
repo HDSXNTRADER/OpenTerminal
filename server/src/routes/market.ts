@@ -14,6 +14,9 @@ import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
 import * as openbb from "../providers/openbb.js";
+import * as bcb from "../providers/bcb.js";
+import * as tesouro from "../providers/tesouro.js";
+import { isIntraday, isSubMinute, lastSession, parseInterval, rangeStart, resample, type Interval } from "../timeframe.js";
 
 export const marketRouter = Router();
 
@@ -244,9 +247,17 @@ marketRouter.get("/quotes", async (req, res) => {
 marketRouter.get("/history/:symbol", async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const rangeKey = String(req.query.range ?? "6M");
+  const rawInterval = req.query.interval === undefined ? "" : String(req.query.interval);
+  const iv = rawInterval && rawInterval !== "auto" ? parseInterval(rawInterval) : null;
+  if (rawInterval && rawInterval !== "auto" && !iv) {
+    res.status(400).json({ error: `invalid interval "${rawInterval.slice(0, 20)}" (examples: 1m, 15m, 4h, 1D, 1W, 1M)` });
+    return;
+  }
   try {
-    const data = await cached(`history:${symbol}:${rangeKey}`, HISTORY_TTL, () =>
-      binance.CRYPTO_SYMBOLS.has(symbol)
+    const data = await cached(`history:${symbol}:${rangeKey}:${iv?.key ?? "auto"}`, HISTORY_TTL, () =>
+      iv
+        ? historyAtInterval(symbol, rangeKey, iv)
+        : binance.CRYPTO_SYMBOLS.has(symbol)
         ? binance.history(symbol, rangeKey)
         : isVix(symbol)
         ? vixHistory(rangeKey)
@@ -263,6 +274,43 @@ marketRouter.get("/history/:symbol", async (req, res) => {
     fail(req, res, err);
   }
 });
+
+/**
+ * History at an explicit timeframe (1m, 15m, 4h, 1D, 2W, 1M, ...). Intraday
+ * bars only come from sources that have them (Binance, OpenBB, Yahoo); daily
+ * and longer can also be rebuilt from Nasdaq/Stooq daily bars.
+ */
+async function historyAtInterval(symbol: string, rangeKey: string, iv: Interval): Promise<yahoo.Candle[]> {
+  const now = Date.now();
+  if (binance.CRYPTO_SYMBOLS.has(symbol)) {
+    // Crypto trades 24/7, so "1D" really means the last 24 hours.
+    const start = rangeKey === "1D" ? now - 86_400_000 : rangeStart(rangeKey, now);
+    return binance.historyInterval(symbol, start, iv);
+  }
+  if (isSubMinute(iv)) throw new Error("second-level bars are only available for crypto");
+  const start = rangeStart(rangeKey, now);
+  const sinceStart = (cs: yahoo.Candle[]) => {
+    const kept = cs.filter((c) => c.time * 1000 >= start);
+    if (kept.length === 0) throw new Error("no bars in the requested range");
+    return kept;
+  };
+  if (isVix(symbol)) {
+    if (isIntraday(iv)) throw new Error("VIX is only available with daily bars or longer");
+    return resample(sinceStart(await vixHistory("MAX")), iv);
+  }
+  const chain: Array<[string, () => Promise<yahoo.Candle[]>]> = [
+    ...openbbFirst(() => openbb.historyInterval(symbol, start, iv, now)),
+    ["yahoo", () => yahoo.historyInterval(symbol, start, iv, now)],
+  ];
+  if (!isIntraday(iv)) {
+    chain.push(
+      ["nasdaq", async () => resample(sinceStart(await nasdaq.history(symbol, "MAX")), iv)],
+      ["stooq", async () => resample(sinceStart(await stooq.history(symbol)), iv)]
+    );
+  }
+  const candles = await withFallback(chain);
+  return rangeKey === "1D" && isIntraday(iv) ? lastSession(candles) : candles;
+}
 
 /** Prepends OpenBB to a fallback chain only when OPENBB_URL is configured. */
 function openbbFirst<T>(fn: () => Promise<T>): Array<[string, () => Promise<T>]> {
@@ -283,6 +331,16 @@ function yahooRange(rangeKey: string): { range: string; interval: string } {
   return map[rangeKey] ?? map["6M"];
 }
 
+// ---- Brazil: policy rates from the central bank (Selic, CDI, IPCA 12m) ----
+
+marketRouter.get("/brazil/rates", async (req, res) => {
+  try {
+    res.json(await cached("bcb:rates", 3_600_000, () => tracked("bcb", () => bcb.rates())));
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
+
 // ---- fundamentals (OpenBB only: valuation, margins, growth, balance-sheet health) ----
 
 marketRouter.get("/fundamentals/:symbol", async (req, res) => {
@@ -295,6 +353,175 @@ marketRouter.get("/fundamentals/:symbol", async (req, res) => {
       withFallback([["openbb", () => openbb.fundamentals(symbol)]])
     );
     res.json(data);
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
+
+// ---- company description (DES) + analyst consensus (ANR): Yahoo, OpenBB profile as fallback ----
+
+marketRouter.get("/company/:symbol", async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  try {
+    const sources: Array<[string, () => Promise<yahoo.CompanyProfile>]> = [["yahoo", () => yahoo.profile(symbol)]];
+    if (openbb.enabled()) {
+      sources.push([
+        "openbb",
+        async () => {
+          const f = await openbb.fundamentals(symbol);
+          return {
+            symbol, name: f.name, sector: f.sector, industry: f.industry, country: null, city: null,
+            website: f.website, employees: f.employees, description: f.description, officers: [],
+            exchange: null, currency: f.currency, marketCap: f.marketCap,
+            analysts: {
+              recommendation: null, mean: null, count: null, targetMean: null, targetHigh: null,
+              targetLow: null, targetMedian: null, price: null, trend: [], changes: [],
+            },
+            source: "openbb",
+          };
+        },
+      ]);
+    }
+    res.json(await cached(`company:${symbol}`, 3_600_000, () => withFallback(sources)));
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
+
+// ---- financial statements (FA) ----
+
+marketRouter.get("/financials/:symbol", async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  const freq = req.query.freq === "quarterly" ? "quarterly" : "annual";
+  try {
+    res.json(
+      await cached(`financials:${symbol}:${freq}`, 6 * 3_600_000, () =>
+        withFallback([["yahoo", () => yahoo.statements(symbol, freq)]])
+      )
+    );
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
+
+// ---- peers (RV): same sector, closest market cap, from the market-wide scan ----
+
+marketRouter.get("/peers/:symbol", async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  try {
+    let market: "us" | "eu" = "us";
+    let rows = await marketRows("us");
+    let me = rows.find((r) => r.symbol === symbol);
+    if (!me) {
+      // European tickers come as "SAP.DE" from Yahoo but "SAP" from TradingView.
+      const bare = symbol.split(".")[0];
+      rows = await marketRows("eu").catch(() => []);
+      me = rows.find((r) => r.symbol === bare);
+      market = "eu";
+    }
+    if (!me || !me.marketCap) {
+      return res.status(404).json({ error: "Peers are only available for US and European stocks." });
+    }
+    const cap = me.marketCap;
+    const peers = rows
+      .filter((r) => r.sector === me!.sector && r.symbol !== me!.symbol && r.marketCap)
+      .sort((a, b) => Math.abs(Math.log(a.marketCap! / cap)) - Math.abs(Math.log(b.marketCap! / cap)))
+      .slice(0, 9);
+    const group = [me, ...peers];
+    let extra = new Map<string, yahoo.Quote>();
+    if (market === "us") {
+      const q = await getQuotes(group.map((r) => r.symbol)).catch(() => []);
+      extra = new Map(q.map((x) => [x.symbol, x]));
+    }
+    res.json({
+      symbol: me.symbol,
+      sector: me.sector,
+      market,
+      rows: group.map((r) => {
+        const q = extra.get(r.symbol);
+        return {
+          symbol: r.symbol,
+          name: r.name,
+          price: r.price,
+          changePercent: r.changePercent,
+          marketCap: r.marketCap,
+          pe: r.pe ?? q?.pe ?? null,
+          eps: q?.eps ?? null,
+          dividendYield: q?.dividendYield ?? null,
+          beta: q?.beta ?? null,
+          week52High: q?.week52High ?? null,
+          week52Low: q?.week52Low ?? null,
+        };
+      }),
+    });
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
+
+// ---- yield curves (GC): US Treasuries (FRED), euro-area AAA (ECB), Brazil (Tesouro Direto) ----
+
+const US_CURVE: Array<{ id: string; tenor: string; years: number }> = [
+  { id: "DGS1MO", tenor: "1M", years: 1 / 12 },
+  { id: "DGS3MO", tenor: "3M", years: 0.25 },
+  { id: "DGS6MO", tenor: "6M", years: 0.5 },
+  { id: "DGS1", tenor: "1Y", years: 1 },
+  { id: "DGS2", tenor: "2Y", years: 2 },
+  { id: "DGS3", tenor: "3Y", years: 3 },
+  { id: "DGS5", tenor: "5Y", years: 5 },
+  { id: "DGS7", tenor: "7Y", years: 7 },
+  { id: "DGS10", tenor: "10Y", years: 10 },
+  { id: "DGS20", tenor: "20Y", years: 20 },
+  { id: "DGS30", tenor: "30Y", years: 30 },
+];
+
+const EU_CURVE: Array<{ tenor: string; years: number }> = [
+  { tenor: "3M", years: 0.25 }, { tenor: "6M", years: 0.5 }, { tenor: "1Y", years: 1 }, { tenor: "2Y", years: 2 },
+  { tenor: "3Y", years: 3 }, { tenor: "5Y", years: 5 }, { tenor: "7Y", years: 7 }, { tenor: "10Y", years: 10 },
+  { tenor: "20Y", years: 20 }, { tenor: "30Y", years: 30 },
+];
+
+type CurveOut = { label: string; date: string | null; points: Array<{ tenor: string; years: number; value: number }> };
+
+async function curveFrom<T extends { tenor: string; years: number }>(
+  label: string,
+  defs: T[],
+  load: (d: T) => Promise<{ date: string; value: number } | null>
+): Promise<CurveOut> {
+  const res = await Promise.allSettled(defs.map(load));
+  const points: CurveOut["points"] = [];
+  let date: string | null = null;
+  res.forEach((r, i) => {
+    if (r.status !== "fulfilled" || !r.value) return;
+    points.push({ tenor: defs[i].tenor, years: defs[i].years, value: r.value.value });
+    if (!date || r.value.date > date) date = r.value.date;
+  });
+  return { label, date, points };
+}
+
+marketRouter.get("/curves", async (req, res) => {
+  try {
+    const out = await cached("curves", 1_800_000, async () => {
+      const [us, eu, br] = await Promise.all([
+        curveFrom("US Treasury", US_CURVE, (d) => cached(`fred:${d.id}`, 300_000, () => tracked("fred", () => fred.latest(d.id)))),
+        curveFrom("Euro AAA", EU_CURVE, (d) => {
+          const key = `B.U2.EUR.4F.G_N_A.SV_C_YM.SR_${d.tenor}`;
+          return cached(`ecb:${key}`, 300_000, () => tracked("ecb", () => ecb.latest("YC", key)));
+        }),
+        cached("tesouro:curves", 6 * 3_600_000, () => tracked("tesouro", () => tesouro.curves())).catch(() => null),
+      ]);
+      const toPoints = (ps: tesouro.CurvePoint[]) =>
+        ps.map((p) => ({ tenor: p.maturity.slice(0, 4), years: p.years, value: p.value }));
+      const curves: CurveOut[] = [us, eu];
+      if (br) {
+        curves.push({ label: "Brazil Prefixado", date: br.date, points: toPoints(br.nominal) });
+        curves.push({ label: "Brazil IPCA+ (real)", date: br.date, points: toPoints(br.real) });
+      }
+      const filled = curves.filter((c) => c.points.length > 0);
+      if (filled.length === 0) throw new Error("no curve data from any provider");
+      return filled;
+    });
+    res.json(out);
   } catch (err) {
     fail(req, res, err);
   }
@@ -600,6 +827,8 @@ marketRouter.get("/screener", async (req, res) => {
       changeMin: num(req.query.changeMin),
       changeMax: num(req.query.changeMax),
       volumeMin: num(req.query.volumeMin),
+      peMin: num(req.query.peMin),
+      peMax: num(req.query.peMax),
     };
     rows = rows.filter((r) => {
       if (f.sector && r.sector !== f.sector) return false;
@@ -607,6 +836,9 @@ marketRouter.get("/screener", async (req, res) => {
       if (f.changeMin !== undefined && (r.changePercent ?? -Infinity) < f.changeMin) return false;
       if (f.changeMax !== undefined && (r.changePercent ?? Infinity) > f.changeMax) return false;
       if (f.volumeMin !== undefined && (r.volume ?? 0) < f.volumeMin) return false;
+      // A P/E filter only keeps profitable companies that report one.
+      if (f.peMin !== undefined && (r.pe == null || r.pe < f.peMin)) return false;
+      if (f.peMax !== undefined && (r.pe == null || r.pe <= 0 || r.pe > f.peMax)) return false;
       return true;
     });
     const sortKey = String(req.query.sort ?? "marketCap") as keyof tradingview.MarketRow;

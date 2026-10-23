@@ -4,8 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, pctClass } from "../../lib/api";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from "recharts";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
+import { t } from "../../lib/i18n";
 
 type MacroData = {
   yields: Array<{ tenor: string; value: number | null }>;
@@ -16,7 +17,7 @@ type MacroData = {
 };
 
 export default function MacroWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [region, setRegion] = useState<"us" | "eu">("us");
   const { data, error } = useQuery({
     queryKey: ["macro", region],
@@ -34,9 +35,9 @@ export default function MacroWidget() {
         ))}
       </div>
       {error ? (
-        <div className="p-2 down">Error: {(error as Error).message}</div>
+        <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>
       ) : !data ? (
-        <div className="p-2 dim">Loading macro data…</div>
+        <div className="p-2 dim">{t("Loading macro data…")}</div>
       ) : (
         <MacroBody data={data} region={region} setActiveSymbol={setActiveSymbol} />
       )}
@@ -78,19 +79,19 @@ function MacroBody({
       <div className="h-24 px-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data.yields} margin={{ top: 4, right: 12, bottom: 0, left: -22 }}>
-            <XAxis dataKey="tenor" stroke="#808080" fontSize={9} />
-            <YAxis stroke="#808080" fontSize={9} domain={["auto", "auto"]} />
+            <XAxis dataKey="tenor" stroke="var(--text-dim)" fontSize={9} />
+            <YAxis stroke="var(--text-dim)" fontSize={9} domain={["auto", "auto"]} />
             <Tooltip
-              contentStyle={{ background: "#111", border: "1px solid #262626", fontSize: 10 }}
-              labelStyle={{ color: "#808080" }}
+              contentStyle={{ background: "var(--panel-2)", border: "1px solid var(--border)", fontSize: 10 }}
+              labelStyle={{ color: "var(--text-dim)" }}
             />
-            <Line type="monotone" dataKey="value" stroke="#ff9900" strokeWidth={1.5} dot={{ r: 2 }} />
+            <Line type="monotone" dataKey="value" stroke="var(--amber)" strokeWidth={1.5} dot={{ r: 2 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
       <table className="data-table">
         <thead>
-          <tr><th>Index / Commodity</th><th>Last</th><th>Chg%</th></tr>
+          <tr><th>{t("Index / Commodity")}</th><th>{t("Last")}</th><th>{t("Chg%")}</th></tr>
         </thead>
         <tbody>
           {data.indexes.map((q) => (

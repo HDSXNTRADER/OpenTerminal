@@ -82,6 +82,8 @@ export type MarketRow = {
   marketCap: number | null;
   sector: string;
   exchange: string;
+  /** Price / earnings (trailing 12 months); null for loss-making or unknown. */
+  pe?: number | null;
   country?: string;
   /** Currency marketCap is denominated in (europeMarketScan only). */
   currency?: string;
@@ -93,7 +95,7 @@ export async function marketScan(limit = 1500): Promise<MarketRow[]> {
     method: "POST",
     headers: HEADERS,
     body: JSON.stringify({
-      columns: ["description", "close", "change", "market_cap_basic", "sector", "volume", "exchange"],
+      columns: ["description", "close", "change", "market_cap_basic", "sector", "volume", "exchange", "price_earnings_ttm"],
       filter: [
         { left: "type", operation: "equal", right: "stock" },
         { left: "typespecs", operation: "has", right: ["common"] },
@@ -107,7 +109,7 @@ export async function marketScan(limit = 1500): Promise<MarketRow[]> {
   const rows: Array<{ s: string; d: any[] }> = json?.data ?? [];
   return rows
     .map((r) => {
-      const [name, close, change, marketCap, sector, volume, exchange] = r.d;
+      const [name, close, change, marketCap, sector, volume, exchange, pe] = r.d;
       return {
         symbol: r.s.split(":")[1],
         name: name ?? r.s.split(":")[1],
@@ -117,6 +119,7 @@ export async function marketScan(limit = 1500): Promise<MarketRow[]> {
         sector: sector || "Other",
         volume: volume ?? null,
         exchange: exchange ?? "",
+        pe: pe ?? null,
       };
     })
     // OTC/pink-sheet listings are foreign primary listings mirrored onto US OTC
@@ -154,7 +157,7 @@ async function scanOneEuropeMarket(
       // fundamental_currency_code (not "currency"!) is what market_cap_basic
       // is denominated in — for UK listings "currency" is GBX (pence, the
       // quote currency) while the market cap is reported in GBP.
-      columns: ["description", "close", "change", "market_cap_basic", "sector", "volume", "fundamental_currency_code"],
+      columns: ["description", "close", "change", "market_cap_basic", "sector", "volume", "fundamental_currency_code", "price_earnings_ttm"],
       filter: [
         { left: "type", operation: "equal", right: "stock" },
         { left: "typespecs", operation: "has", right: ["common"] },
@@ -170,7 +173,7 @@ async function scanOneEuropeMarket(
   const rows: Array<{ s: string; d: any[] }> = json?.data ?? [];
   return rows
     .map((r) => {
-      const [name, close, change, marketCap, sector, volume, currency] = r.d;
+      const [name, close, change, marketCap, sector, volume, currency, pe] = r.d;
       return {
         symbol: r.s.split(":")[1],
         name: name ?? r.s.split(":")[1],
@@ -182,6 +185,7 @@ async function scanOneEuropeMarket(
         exchange: m.exchange,
         country: m.country,
         currency: currency || undefined,
+        pe: pe ?? null,
       };
     })
     .filter((r) => r.symbol);

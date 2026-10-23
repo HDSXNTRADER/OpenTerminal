@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet, fmt, fmtBig, pctClass } from "../../lib/api";
 import Flash from "../Flash";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
+import { t } from "../../lib/i18n";
 
 type CryptoRow = {
   id: string; symbol: string; name: string; price: number | null;
@@ -36,7 +37,7 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function CryptoWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const { data = [], error } = useQuery({
     queryKey: ["crypto"],
     queryFn: () => apiGet<CryptoRow[]>("/api/crypto"),
@@ -48,20 +49,20 @@ export default function CryptoWidget() {
     refetchInterval: 30_000,
   });
 
-  if (error) return <div className="p-2 down">Error: {(error as Error).message}</div>;
+  if (error) return <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>;
 
   return (
     <div>
       {global && (
         <div className="flex gap-4 px-2 py-1 border-b border-[var(--border)] dim">
-          <span>Total MCap <span className="text-[var(--text)]">{fmtBig(global.totalMarketCap)}</span></span>
+          <span>{t("Total MCap")} <span className="text-[var(--text)]">{fmtBig(global.totalMarketCap)}</span></span>
           <span>BTC.D <span className="amber">{fmt(global.btcDominance, 1)}%</span></span>
           <span>ETH.D <span className="amber">{fmt(global.ethDominance, 1)}%</span></span>
         </div>
       )}
       <table className="data-table">
         <thead>
-          <tr><th>#</th><th>Asset</th><th>Price</th><th>24h%</th><th>MCap</th><th>Vol 24h</th><th>7d</th></tr>
+          <tr><th>#</th><th>{t("Asset")}</th><th>{t("Price")}</th><th>24h%</th><th>MCap</th><th>Vol 24h</th><th>7d</th></tr>
         </thead>
         <tbody>
           {data.map((c) => (

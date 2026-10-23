@@ -1,5 +1,6 @@
 import type { CryptoRow } from "./coingecko.js";
 import type { Quote, Candle } from "./yahoo.js";
+import { pickBase, resample, type Interval } from "../timeframe.js";
 
 const NAMES: Record<string, string> = {
   BTCUSDT: "Bitcoin", ETHUSDT: "Ethereum", SOLUSDT: "Solana", BNBUSDT: "BNB",
@@ -104,4 +105,45 @@ export async function history(symbol: string, rangeKey: string): Promise<Candle[
     close: +r[4],
     volume: +r[5],
   }));
+}
+
+const BINANCE_NATIVE = {
+  minutes: [
+    [1 / 60, "1s"], [1, "1m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"],
+    [240, "4h"], [360, "6h"], [480, "8h"], [720, "12h"],
+  ] as Array<[number, string]>,
+  day: "1d",
+  week: "1w",
+  month: "1M",
+};
+
+const KLINE_PAGE = 1000;
+const KLINE_MAX_PAGES = 10;
+
+/**
+ * History at any timeframe. Pages backwards from now (1000 klines per call,
+ * at most 10 calls) so the most recent bars are always included.
+ */
+export async function historyInterval(symbol: string, startMs: number, iv: Interval): Promise<Candle[]> {
+  const { base } = pickBase(iv, BINANCE_NATIVE);
+  const pair = symbol.toUpperCase() + "USDT";
+  const pages: Candle[][] = [];
+  let endTime: number | null = null;
+  for (let page = 0; page < KLINE_MAX_PAGES; page++) {
+    const url =
+      `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(pair)}&interval=${base}&limit=${KLINE_PAGE}` +
+      (endTime !== null ? `&endTime=${endTime}` : "");
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`binance klines ${res.status}`);
+    const rows: any[] = await res.json();
+    if (rows.length === 0) break;
+    pages.unshift(
+      rows
+        .filter((r) => r[0] >= startMs)
+        .map((r) => ({ time: Math.round(r[0] / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] }))
+    );
+    if (rows.length < KLINE_PAGE || rows[0][0] <= startMs) break;
+    endTime = rows[0][0] - 1;
+  }
+  return resample(pages.flat(), iv);
 }

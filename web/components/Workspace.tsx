@@ -5,7 +5,7 @@ import GridLayout, { WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { normalizeSymbol } from "../lib/symbol";
-import { useTerminal, type WidgetInstance } from "../store/terminal";
+import { GRID, LINK_GROUPS, useTerminal, WidgetContext, type WidgetInstance } from "../store/terminal";
 import QuoteWidget from "./widgets/QuoteWidget";
 import ChartWidget from "./widgets/ChartWidget";
 import WatchlistWidget from "./widgets/WatchlistWidget";
@@ -22,7 +22,24 @@ import InsiderWidget from "./widgets/InsiderWidget";
 import FundamentalsWidget from "./widgets/FundamentalsWidget";
 import TvWidget from "./widgets/TvWidget";
 import RecapWidget from "./widgets/RecapWidget";
+import AlertsWidget from "./widgets/AlertsWidget";
+import MultiChartWidget from "./widgets/MultiChartWidget";
+import BrazilWidget from "./widgets/BrazilWidget";
+import SeasonalityWidget from "./widgets/SeasonalityWidget";
+import CorrelationWidget from "./widgets/CorrelationWidget";
+import ScannerWidget from "./widgets/ScannerWidget";
+import BriefWidget from "./widgets/BriefWidget";
+import CommoditiesWidget from "./widgets/CommoditiesWidget";
+import WorldIndexesWidget from "./widgets/WorldIndexesWidget";
+import FxMatrixWidget from "./widgets/FxMatrixWidget";
+import DescriptionWidget from "./widgets/DescriptionWidget";
+import AnalystsWidget from "./widgets/AnalystsWidget";
+import PeersWidget from "./widgets/PeersWidget";
+import FinancialsWidget from "./widgets/FinancialsWidget";
+import CurvesWidget from "./widgets/CurvesWidget";
 import WidgetErrorBoundary from "./WidgetErrorBoundary";
+import { t } from "../lib/i18n";
+import { hovered } from "../lib/commands";
 
 const Grid = WidthProvider(GridLayout);
 
@@ -44,6 +61,21 @@ function WidgetBody({ widget }: { widget: WidgetInstance }) {
     case "fundamentals": return <FundamentalsWidget widget={widget} />;
     case "tv": return <TvWidget />;
     case "recap": return <RecapWidget />;
+    case "alerts": return <AlertsWidget />;
+    case "multichart": return <MultiChartWidget widget={widget} />;
+    case "brazil": return <BrazilWidget />;
+    case "seasonality": return <SeasonalityWidget widget={widget} />;
+    case "correlation": return <CorrelationWidget />;
+    case "scanner": return <ScannerWidget />;
+    case "brief": return <BriefWidget widget={widget} />;
+    case "commodities": return <CommoditiesWidget />;
+    case "wei": return <WorldIndexesWidget />;
+    case "fx": return <FxMatrixWidget />;
+    case "des": return <DescriptionWidget widget={widget} />;
+    case "anr": return <AnalystsWidget widget={widget} />;
+    case "peers": return <PeersWidget widget={widget} />;
+    case "financials": return <FinancialsWidget widget={widget} />;
+    case "curves": return <CurvesWidget widget={widget} />;
   }
 }
 
@@ -84,7 +116,7 @@ function SymbolTag({ widget, activeSymbol }: { widget: WidgetInstance; activeSym
   return (
     <span
       className="ml-2 text-[var(--text)] cursor-pointer hover:text-[var(--amber)]"
-      title="Click to set this widget's ticker"
+      title={t("Click to set this widget's ticker")}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => setEditing(true)}
     >
@@ -98,62 +130,139 @@ const TITLES: Record<string, string> = {
   heatmap: "Heatmap", screener: "Screener", crypto: "Crypto",
   macro: "Macro / Indexes", options: "Option Chain", portfolio: "Portfolio", ai: "AI Assistant",
   calendar: "Calendar", insider: "Insider Transactions", fundamentals: "Fundamentals (OpenBB)", tv: "Live TV", recap: "Market Recap",
+  alerts: "Price Alerts", multichart: "Multi-Timeframe", brazil: "Brazil", seasonality: "Seasonality",
+  correlation: "Correlation", scanner: "Pattern Scanner", brief: "Daily AI Brief",
+  commodities: "Commodities", wei: "World Indexes", fx: "Currency Matrix", des: "Company Description",
+  anr: "Analyst Consensus", peers: "Peer Comparison", financials: "Financial Statements", curves: "Yield Curves",
 };
+
+export const SYMBOL_AWARE = new Set([
+  "quote", "chart", "news", "options", "insider", "fundamentals", "multichart", "seasonality",
+  "brief", "des", "anr", "peers", "financials",
+]);
+
+/** Widgets that only pick symbols (lists, maps): their link sends the click to the global symbol or a color group. */
+const SYMBOL_PICKERS = new Set([
+  "watchlist", "screener", "heatmap", "crypto", "macro", "recap", "alerts", "brazil", "scanner", "correlation",
+  "commodities", "wei", "fx", "peers",
+]);
+
+function LinkButton({ widget: w }: { widget: WidgetInstance }) {
+  const cycleLink = useTerminal((s) => s.cycleLink);
+  const aware = SYMBOL_AWARE.has(w.type);
+  const color = w.group ? LINK_GROUPS[w.group - 1] : undefined;
+  const title = w.group
+    ? t("Color group {n}: widgets with the same color share their ticker (click for next)", { n: w.group })
+    : aware
+      ? t(w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)")
+      : t("Sends clicks to the active symbol (click to pick a color group)");
+  return (
+    <button
+      title={title}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={() => cycleLink(w.id, aware)}
+      className={color ? "" : w.linked ? "text-[var(--amber)]" : "dim"}
+      style={color ? { color } : undefined}
+    >
+      {w.group ? "●" : "⛓"}
+    </button>
+  );
+}
+
+function Panel({ widget: w }: { widget: WidgetInstance }) {
+  const removeWidget = useTerminal((s) => s.removeWidget);
+  const activeSymbol = useTerminal((s) => s.activeSymbol);
+  const maximized = useTerminal((s) => s.maximized);
+  const setMaximized = useTerminal((s) => s.setMaximized);
+  const isMax = maximized === w.id;
+  const toggleMax = () => setMaximized(isMax ? null : w.id);
+
+  return (
+    <div
+      className="terminal-panel"
+      data-widget-id={w.id}
+      onMouseEnter={() => (hovered.id = w.id)}
+      onMouseLeave={() => hovered.id === w.id && (hovered.id = null)}
+      style={w.group ? { borderTop: `2px solid ${LINK_GROUPS[w.group - 1]}` } : undefined}>
+      {/* The grid swallows mouseup/click on the drag handle, so detect the double-click on mousedown. */}
+      <div className="panel-title" onMouseDown={(e) => e.detail === 2 && toggleMax()}>
+        <span>
+          {t(TITLES[w.type])}
+          {SYMBOL_AWARE.has(w.type) && <SymbolTag widget={w} activeSymbol={activeSymbol} />}
+        </span>
+        <span className="flex gap-2 items-center">
+          {(SYMBOL_AWARE.has(w.type) || SYMBOL_PICKERS.has(w.type)) && <LinkButton widget={w} />}
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={toggleMax}
+            title={t(isMax ? "Restore (Esc)" : "Maximize (or double-click the title)")}
+            className={isMax ? "text-[var(--amber)]" : "dim hover:text-[var(--amber)]"}
+          >
+            {isMax ? "❐" : "⛶"}
+          </button>
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => removeWidget(w.id)}
+            title={t("Close widget")}
+            className="dim hover:text-[var(--down)]"
+          >
+            ✕
+          </button>
+        </span>
+      </div>
+      <div className="flex-1 overflow-auto min-h-0">
+        <WidgetErrorBoundary name={t(TITLES[w.type])}>
+          <WidgetContext.Provider value={w}>
+            <WidgetBody widget={w} />
+          </WidgetContext.Provider>
+        </WidgetErrorBoundary>
+      </div>
+    </div>
+  );
+}
 
 export default function Workspace() {
   const widgets = useTerminal((s) => s.widgets);
   const layout = useTerminal((s) => s.layout);
   const setLayout = useTerminal((s) => s.setLayout);
-  const removeWidget = useTerminal((s) => s.removeWidget);
-  const toggleLinked = useTerminal((s) => s.toggleLinked);
-  const activeSymbol = useTerminal((s) => s.activeSymbol);
+  const maximized = useTerminal((s) => s.maximized);
+  const setMaximized = useTerminal((s) => s.setMaximized);
+  const maxWidget = widgets.find((w) => w.id === maximized);
 
-  const symbolAware = new Set(["quote", "chart", "news", "options", "insider", "fundamentals"]);
+  useEffect(() => {
+    if (!maxWidget) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMaximized(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [maxWidget, setMaximized]);
+
+  // Full-screen mode shows just that widget; the grid layout is left untouched.
+  if (maxWidget) {
+    return (
+      <div className="h-full p-1">
+        <Panel widget={maxWidget} />
+      </div>
+    );
+  }
 
   return (
     <Grid
       className="layout"
-      layout={layout}
-      cols={12}
-      rowHeight={30}
-      margin={[4, 4]}
+      layout={layout.map((l) => ({ ...l, minW: 4, minH: 4 }))}
+      cols={GRID.cols}
+      rowHeight={GRID.rowHeight}
+      margin={[GRID.margin, GRID.margin]}
+      // Free placement: widgets stay exactly where they are dropped instead of
+      // floating up, and can be resized from any edge or corner.
+      compactType={null}
+      resizeHandles={["s", "e", "w", "n", "se", "sw", "ne", "nw"]}
       draggableHandle=".panel-title"
+      draggableCancel="button, input"
       onLayoutChange={(l) => setLayout(l.map(({ i, x, y, w, h }) => ({ i, x, y, w, h })))}
     >
       {widgets.map((w) => (
         <div key={w.id}>
-          <div className="terminal-panel">
-            <div className="panel-title">
-              <span>
-                {TITLES[w.type]}
-                {symbolAware.has(w.type) && <SymbolTag widget={w} activeSymbol={activeSymbol} />}
-              </span>
-              <span className="flex gap-2 items-center">
-                {symbolAware.has(w.type) && (
-                  <button
-                    title={w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)"}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => toggleLinked(w.id)}
-                    className={w.linked ? "text-[var(--amber)]" : "dim"}
-                  >
-                    ⛓
-                  </button>
-                )}
-                <button
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => removeWidget(w.id)}
-                  className="dim hover:text-[var(--down)]"
-                >
-                  ✕
-                </button>
-              </span>
-            </div>
-            <div className="flex-1 overflow-auto min-h-0">
-              <WidgetErrorBoundary name={TITLES[w.type]}>
-                <WidgetBody widget={w} />
-              </WidgetErrorBoundary>
-            </div>
-          </div>
+          <Panel widget={w} />
         </div>
       ))}
     </Grid>
