@@ -198,6 +198,8 @@ const ENTRIES: Array<[string, string, string]> = [
   // common table / label words
   ["Loading {s}…", "Carregando {s}…", "Cargando {s}…"],
   ["Loading news…", "Carregando notícias…", "Cargando noticias…"],
+  ["News source unavailable right now.", "Fonte de notícias indisponível no momento.", "Fuente de noticias no disponible ahora."],
+  ["Open Finviz news in the browser", "Abrir notícias do Finviz no navegador", "Abrir noticias de Finviz en el navegador"],
   ["Loading option chain…", "Carregando opções…", "Cargando opciones…"],
   ["Loading macro data…", "Carregando dados macro…", "Cargando datos macro…"],
   ["Loading fundamentals for {s}…", "Carregando fundamentos de {s}…", "Cargando fundamentales de {s}…"],

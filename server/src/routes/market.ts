@@ -549,8 +549,16 @@ marketRouter.get("/search", async (req, res) => {
 
 marketRouter.get("/news", async (req, res) => {
   const symbol = req.query.symbol ? String(req.query.symbol).toUpperCase() : null;
+  const source = req.query.source ? String(req.query.source).toLowerCase() : null;
+  if (source && !news.isFeedSource(source)) {
+    res.status(400).json({ error: "unknown news source" });
+    return;
+  }
   try {
-    const data = await cached(`news:${symbol ?? "top"}`, NEWS_TTL, async () => {
+    const data = await cached(`news:${source ?? symbol ?? "top"}`, NEWS_TTL, async () => {
+      if (source && news.isFeedSource(source)) {
+        return news.dedupe([await news.feedNews(source)]).slice(0, 60);
+      }
       if (symbol) {
         const lists = await Promise.allSettled([news.symbolNews(symbol), news.topNews(symbol + " stock")]);
         const ok = lists.filter((r) => r.status === "fulfilled").map((r) => (r as any).value);
@@ -560,10 +568,13 @@ marketRouter.get("/news", async (req, res) => {
       const lists = await Promise.allSettled([
         news.topNews("stock market"),
         news.topNews("federal reserve economy"),
+        news.feedNews("financialjuice"),
+        news.feedNews("bloomberg"),
+        news.feedNews("yahoo"),
       ]);
       const ok = lists.filter((r) => r.status === "fulfilled").map((r) => (r as any).value);
       if (ok.length === 0) throw new Error("all news sources failed");
-      return news.dedupe(ok).slice(0, 40);
+      return news.dedupe(ok).slice(0, 60);
     });
     res.json(data);
   } catch (err) {
