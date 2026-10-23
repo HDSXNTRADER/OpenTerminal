@@ -11,6 +11,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { apiGet, type Candle } from "../../lib/api";
+import { exchangeTimeOptions } from "../../lib/chartTime";
 import { locale, t } from "../../lib/i18n";
 import { defaultRange, intervalMinutes, normalizeInterval } from "../../lib/timeframes";
 import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
@@ -130,12 +131,19 @@ function MiniChart({
     const el = ref.current;
     if (!el || !candles || candles.length === 0) return;
     const colors = chartColors();
+    const intraday = mins !== null && mins < 1440;
+    const timeOpts = exchangeTimeOptions(locale(), intraday);
     const chart = createChart(el, {
       layout: { background: { color: colors.background }, textColor: colors.text, fontSize: 10, attributionLogo: false },
-      localization: { locale: locale() },
+      localization: timeOpts.localization,
       grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       crosshair: { mode: 0 },
-      timeScale: { borderColor: colors.border, timeVisible: mins !== null && mins < 1440, secondsVisible: mins !== null && mins < 1 },
+      timeScale: {
+        borderColor: colors.border,
+        timeVisible: intraday,
+        secondsVisible: mins !== null && mins < 1,
+        tickMarkFormatter: timeOpts.tickMarkFormatter,
+      },
       rightPriceScale: { borderColor: colors.border },
       autoSize: true,
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
