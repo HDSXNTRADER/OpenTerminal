@@ -5,6 +5,8 @@ import { persist } from "zustand/middleware";
 import { normalizeSymbol } from "../lib/symbol";
 
 export type Lang = "pt" | "en" | "es";
+export type Theme = "dark" | "light";
+export type Accent = "amber" | "blue" | "green" | "purple";
 
 export type WidgetType =
   | "quote"
@@ -61,6 +63,10 @@ type TerminalState = {
   /** UI language; Portuguese by default. */
   lang: Lang;
   setLang: (lang: Lang) => void;
+  theme: Theme;
+  accent: Accent;
+  setTheme: (theme: Theme) => void;
+  setAccent: (accent: Accent) => void;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
   watchlist: string[];
@@ -93,7 +99,50 @@ type TerminalState = {
   addAlert: (symbol: string, price: number, direction: PriceAlert["direction"]) => void;
   removeAlert: (id: string) => void;
   triggerAlert: (id: string) => void;
+  watchlists: Watchlist[];
+  activeWatchlist: string;
+  addWatchlist: (name: string) => void;
+  switchWatchlist: (id: string) => void;
+  renameWatchlist: (id: string, name: string) => void;
+  deleteWatchlist: (id: string) => void;
+  /** Adds the layouts, drawings, alerts and lists from an exported file; returns how many layouts were added. */
+  importBackup: (data: unknown) => number;
 };
+
+export type Watchlist = { id: string; name: string; symbols: string[] };
+
+/** Everything a user would want to move to another computer, as one JSON file. */
+export type Backup = {
+  app: "openterminal";
+  version: 1;
+  exportedAt: string;
+  workspaces: Workspace[];
+  watchlists: Watchlist[];
+  drawings: Record<string, Drawing[]>;
+  alerts: PriceAlert[];
+};
+
+export function exportBackup(): Backup {
+  const st = useTerminal.getState();
+  return {
+    app: "openterminal",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    workspaces: st.workspaces.map((w) => (w.id === st.activeWorkspace ? { ...w, widgets: st.widgets, layout: st.layout } : w)),
+    watchlists: st.watchlists.map((l) => (l.id === st.activeWatchlist ? { ...l, symbols: st.watchlist } : l)),
+    drawings: st.drawings,
+    alerts: st.alerts,
+  };
+}
+
+/** "Swing" -> "Swing (2)" when a tab with that name already exists. */
+function uniqueName(name: string, taken: string[]): string {
+  const base = name.slice(0, 26);
+  if (!taken.includes(base)) return base;
+  let n = 2;
+  while (taken.includes(`${base} (${n})`)) n++;
+  return `${base} (${n})`;
+}
 
 const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -158,6 +207,10 @@ export const useTerminal = create<TerminalState>()(
       activeSymbol: "AAPL",
       lang: "pt",
       setLang: (lang) => set({ lang }),
+      theme: "dark",
+      accent: "amber",
+      setTheme: (theme) => set({ theme }),
+      setAccent: (accent) => set({ accent }),
       widgets: DEFAULT_WIDGETS,
       layout: DEFAULT_LAYOUT,
       watchlist: ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "SPY"],
@@ -263,6 +316,69 @@ export const useTerminal = create<TerminalState>()(
       removeAlert: (id) => set((st) => ({ alerts: st.alerts.filter((a) => a.id !== id) })),
       triggerAlert: (id) =>
         set((st) => ({ alerts: st.alerts.map((a) => (a.id === id ? { ...a, triggeredAt: Date.now() } : a)) })),
+      watchlists: [{ id: "wl-main", name: "Principal", symbols: [] }],
+      activeWatchlist: "wl-main",
+      addWatchlist: (name) => {
+        const id = uid("wl");
+        const st = get();
+        set({
+          watchlists: [
+            ...st.watchlists.map((l) => (l.id === st.activeWatchlist ? { ...l, symbols: st.watchlist } : l)),
+            { id, name, symbols: [] },
+          ],
+          activeWatchlist: id,
+          watchlist: [],
+        });
+      },
+      switchWatchlist: (id) => {
+        const st = get();
+        const target = st.watchlists.find((l) => l.id === id);
+        if (!target || id === st.activeWatchlist) return;
+        set({
+          watchlists: st.watchlists.map((l) => (l.id === st.activeWatchlist ? { ...l, symbols: st.watchlist } : l)),
+          activeWatchlist: id,
+          watchlist: target.symbols,
+        });
+      },
+      renameWatchlist: (id, name) =>
+        set((st) => ({ watchlists: st.watchlists.map((l) => (l.id === id ? { ...l, name } : l)) })),
+      deleteWatchlist: (id) => {
+        const st = get();
+        if (st.watchlists.length <= 1) return;
+        const rest = st.watchlists.filter((l) => l.id !== id);
+        if (id !== st.activeWatchlist) return set({ watchlists: rest });
+        set({ watchlists: rest, activeWatchlist: rest[0].id, watchlist: rest[0].symbols });
+      },
+      importBackup: (data) => {
+        const b = data as Partial<Backup>;
+        if (!b || b.app !== "openterminal" || !Array.isArray(b.workspaces)) throw new Error("not an OpenTerminal backup file");
+        const st = get();
+        // Imported layouts are added next to the existing ones (fresh ids), never replacing them.
+        const workspaces = b.workspaces
+          .filter((w) => w && Array.isArray(w.widgets) && Array.isArray(w.layout))
+          .map((w) => ({ ...w, id: uid("ws"), name: uniqueName(String(w.name ?? "Layout"), st.workspaces.map((x) => x.name)) }));
+        const watchlists = (Array.isArray(b.watchlists) ? b.watchlists : [])
+          .filter((l) => l && Array.isArray(l.symbols))
+          .map((l) => ({ id: uid("wl"), name: uniqueName(String(l.name ?? "Lista"), st.watchlists.map((x) => x.name)), symbols: l.symbols.map(String) }));
+        const drawings = { ...st.drawings };
+        for (const [sym, list] of Object.entries(b.drawings ?? {})) {
+          if (!Array.isArray(list)) continue;
+          const known = new Set((drawings[sym] ?? []).map((d) => d.id));
+          drawings[sym] = [...(drawings[sym] ?? []), ...list.filter((d) => d && !known.has(d.id))];
+        }
+        const knownAlerts = new Set(st.alerts.map((a) => a.id));
+        const alerts = [...st.alerts, ...(Array.isArray(b.alerts) ? b.alerts.filter((a) => a && !knownAlerts.has(a.id)) : [])];
+        set({
+          workspaces: [
+            ...st.workspaces.map((w) => (w.id === st.activeWorkspace ? { ...w, widgets: st.widgets, layout: st.layout } : w)),
+            ...workspaces,
+          ],
+          watchlists: [...st.watchlists, ...watchlists],
+          drawings,
+          alerts,
+        });
+        return workspaces.length;
+      },
     }),
     {
       name: "openterminal-workspace",

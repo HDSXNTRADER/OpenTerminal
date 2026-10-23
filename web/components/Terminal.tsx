@@ -13,10 +13,16 @@ export default function Terminal() {
   const setCommandOpen = useTerminal((s) => s.setCommandOpen);
   const addWidget = useTerminal((s) => s.addWidget);
   const lang = useTerminal((s) => s.lang);
+  const theme = useTerminal((s) => s.theme);
+  const accent = useTerminal((s) => s.accent);
 
   useEffect(() => {
     document.documentElement.lang = lang === "pt" ? "pt-BR" : lang;
   }, [lang]);
+
+  // Set before children render (layout effect would be too late for the first chart paint on remount).
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.accent = accent;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -49,8 +55,8 @@ export default function Terminal() {
   }, [setCommandOpen, addWidget]);
 
   return (
-    // Re-mount on language change so every widget re-renders its labels.
-    <div key={lang} className="flex flex-col h-screen">
+    // Re-mount on language/theme change so every widget re-renders its labels and chart colours.
+    <div key={`${lang}-${theme}-${accent}`} className="flex flex-col h-screen">
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />

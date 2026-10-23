@@ -109,7 +109,7 @@ export default function FundamentalsWidget({ widget }: { widget: WidgetInstance 
           <div className="text-[var(--amber)] text-[10px] uppercase tracking-wider mb-0.5">{title}</div>
           <div className="grid grid-cols-2 gap-x-4">
             {rows.map(([label, value, cls]) => (
-              <div key={label} className="flex justify-between border-b border-[#161616] py-0.5">
+              <div key={label} className="flex justify-between border-b border-[var(--line)] py-0.5">
                 <span className="dim">{label}</span>
                 <span className={cls}>{value}</span>
               </div>

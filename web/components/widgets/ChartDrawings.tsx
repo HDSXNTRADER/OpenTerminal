@@ -260,7 +260,7 @@ export default function DrawingLayer({
     <>
       <svg className="absolute inset-0 w-full h-full pointer-events-none z-[5]">{shapes}</svg>
       {tool && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 bg-[rgba(10,10,10,0.85)] border border-[var(--amber-dim)] px-2 py-0.5 text-[11px] amber pointer-events-none">
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 bg-[var(--overlay)] border border-[var(--amber-dim)] px-2 py-0.5 text-[11px] amber pointer-events-none">
           {t(DRAW_TOOLS.find((x) => x.id === tool)!.label)}
           {pending ? ` — ${t("now click the second point")}` : ""} · Esc
         </div>

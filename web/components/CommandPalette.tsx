@@ -70,7 +70,7 @@ export default function CommandPalette() {
               key={r.symbol + i}
               onClick={() => pick(r)}
               className={`px-3 py-1.5 flex gap-3 cursor-pointer ${
-                i === selected ? "bg-[#1f1a10] text-[var(--amber)]" : "hover:bg-[#161616]"
+                i === selected ? "bg-[var(--select)] text-[var(--amber)]" : "hover:bg-[var(--hover)]"
               }`}
             >
               <span className="w-24 font-bold">{r.symbol}</span>

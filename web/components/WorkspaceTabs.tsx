@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t } from "../lib/i18n";
-import { useTerminal } from "../store/terminal";
+import { exportBackup, useTerminal } from "../store/terminal";
 
 /** Tabs for saved layouts ("Day trade", "Swing"...). Double-click a tab to rename it. */
 export default function WorkspaceTabs() {
@@ -14,6 +14,26 @@ export default function WorkspaceTabs() {
   const deleteWorkspace = useTerminal((s) => s.deleteWorkspace);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const importBackup = useTerminal((s) => s.importBackup);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const doExport = () => {
+    const blob = new Blob([JSON.stringify(exportBackup(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `openterminal-layouts-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  const doImport = async (file: File) => {
+    try {
+      const n = importBackup(JSON.parse(await file.text()));
+      window.alert(t("Imported {n} layout(s). They were added as new tabs.", { n }));
+    } catch (err) {
+      window.alert(t("Could not import this file: {msg}", { msg: t((err as Error).message) }));
+    }
+  };
 
   const commitRename = () => {
     if (editing && draft.trim()) renameWorkspace(editing, draft.trim().slice(0, 30));
@@ -77,6 +97,24 @@ export default function WorkspaceTabs() {
       >
         + {t("New layout")}
       </button>
+      <span className="ml-auto" />
+      <button className="px-3 dim hover:text-[var(--amber)]" title={t("Save layouts, lists, drawings and alerts to a file")} onClick={doExport}>
+        ⤓ {t("Export")}
+      </button>
+      <button className="px-3 dim hover:text-[var(--amber)]" title={t("Load layouts from an exported file")} onClick={() => fileRef.current?.click()}>
+        ⤒ {t("Import")}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) doImport(f);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }

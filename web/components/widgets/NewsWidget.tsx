@@ -40,7 +40,7 @@ export default function NewsWidget({ widget }: { widget: WidgetInstance }) {
             </div>
           </>
         );
-        const className = "block px-2 py-1 border-b border-[#161616] hover:bg-[#161616]";
+        const className = "block px-2 py-1 border-b border-[var(--line)] hover:bg-[var(--hover)]";
         return isSafeHttpUrl(n.link) ? (
           <a key={i} href={n.link} target="_blank" rel="noreferrer" className={className}>
             {body}

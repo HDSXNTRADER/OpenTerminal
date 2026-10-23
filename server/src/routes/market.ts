@@ -646,6 +646,8 @@ marketRouter.get("/screener", async (req, res) => {
       changeMin: num(req.query.changeMin),
       changeMax: num(req.query.changeMax),
       volumeMin: num(req.query.volumeMin),
+      peMin: num(req.query.peMin),
+      peMax: num(req.query.peMax),
     };
     rows = rows.filter((r) => {
       if (f.sector && r.sector !== f.sector) return false;
@@ -653,6 +655,9 @@ marketRouter.get("/screener", async (req, res) => {
       if (f.changeMin !== undefined && (r.changePercent ?? -Infinity) < f.changeMin) return false;
       if (f.changeMax !== undefined && (r.changePercent ?? Infinity) > f.changeMax) return false;
       if (f.volumeMin !== undefined && (r.volume ?? 0) < f.volumeMin) return false;
+      // A P/E filter only keeps profitable companies that report one.
+      if (f.peMin !== undefined && (r.pe == null || r.pe < f.peMin)) return false;
+      if (f.peMax !== undefined && (r.pe == null || r.pe <= 0 || r.pe > f.peMax)) return false;
       return true;
     });
     const sortKey = String(req.query.sort ?? "marketCap") as keyof tradingview.MarketRow;

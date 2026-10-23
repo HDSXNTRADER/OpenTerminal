@@ -15,6 +15,13 @@ export default function WatchlistWidget() {
   const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
   const [input, setInput] = useState("");
   const [invalid, setInvalid] = useState(false);
+  const watchlists = useTerminal((s) => s.watchlists);
+  const activeList = useTerminal((s) => s.activeWatchlist);
+  const switchWatchlist = useTerminal((s) => s.switchWatchlist);
+  const addWatchlist = useTerminal((s) => s.addWatchlist);
+  const renameWatchlist = useTerminal((s) => s.renameWatchlist);
+  const deleteWatchlist = useTerminal((s) => s.deleteWatchlist);
+  const current = watchlists.find((l) => l.id === activeList);
 
   const { data = [] } = useQuery({
     queryKey: ["watchlist", watchlist.join(",")],
@@ -25,6 +32,44 @@ export default function WatchlistWidget() {
 
   return (
     <div>
+      <div className="flex gap-1 px-1 pt-1 items-center">
+        <select value={activeList} onChange={(e) => switchWatchlist(e.target.value)} className="flex-1 min-w-0">
+          {watchlists.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+        <button
+          className="term-btn"
+          title={t("New list")}
+          onClick={() => {
+            const name = window.prompt(t("Name of the new list:"), t("List {n}", { n: watchlists.length + 1 }));
+            if (name && name.trim()) addWatchlist(name.trim().slice(0, 30));
+          }}
+        >
+          +
+        </button>
+        <button
+          className="term-btn"
+          title={t("Rename list")}
+          onClick={() => {
+            const name = window.prompt(t("Rename list"), current?.name ?? "");
+            if (name && name.trim()) renameWatchlist(activeList, name.trim().slice(0, 30));
+          }}
+        >
+          ✎
+        </button>
+        {watchlists.length > 1 && (
+          <button
+            className="term-btn hover:!text-[var(--down)]"
+            title={t("Delete list")}
+            onClick={() => window.confirm(t("Delete the list “{name}”?", { name: current?.name ?? "" })) && deleteWatchlist(activeList)}
+          >
+            ✕
+          </button>
+        )}
+      </div>
       <form
         className="flex gap-1 p-1"
         onSubmit={(e) => {
@@ -61,7 +106,13 @@ export default function WatchlistWidget() {
             const q = data.find((d) => d.symbol === sym);
             return (
               <tr key={sym} onClick={() => setActiveSymbol(sym)}>
-                <td className="font-bold">{sym}</td>
+                <td
+                  className={`font-bold border-l-2 ${
+                    (q?.changePercent ?? 0) > 0 ? "border-[var(--up)]" : (q?.changePercent ?? 0) < 0 ? "border-[var(--down)]" : "border-transparent"
+                  }`}
+                >
+                  {sym}
+                </td>
                 <td><Flash value={q?.price}>{fmt(q?.price)}</Flash></td>
                 <td className={pctClass(q?.changePercent)}>
                   <Flash value={q?.changePercent}>{fmt(q?.changePercent)}%</Flash>

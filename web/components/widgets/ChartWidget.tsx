@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
@@ -9,6 +9,7 @@ import {
   HistogramSeries,
   AreaSeries,
   BarSeries,
+  PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
   type SeriesType,
@@ -18,8 +19,10 @@ import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
 import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 import { locale, t } from "../../lib/i18n";
+import { normalizeSymbol } from "../../lib/symbol";
 import { INTERVALS, RANGES, intervalMinutes, normalizeInterval, rangeAllowed, type Range } from "../../lib/timeframes";
 import DrawingLayer, { DRAW_TOOLS, type ChartApi, type DrawTool } from "./ChartDrawings";
+import { chartColors } from "../../lib/theme";
 
 // The chart the user last pointed at or clicked receives typed timeframe shortcuts.
 let keyboardChart: string | null = null;
@@ -38,7 +41,9 @@ const INDICATOR_COLOR: Record<string, string> = {
   VWAP: "#80cbc4", RSI: "#ff9900", BOLL: "#ff9900", MACD: "#4fc3f7",
 };
 
-type ChartSettings = { range?: Range; interval?: string; chartType?: ChartType; indicators?: Indicator[] };
+type ChartSettings = { range?: Range; interval?: string; chartType?: ChartType; indicators?: Indicator[]; compare?: string[] };
+
+const COMPARE_COLORS = ["#4fc3f7", "#ba68c8", "#ffd966", "#80cbc4", "#ff8a65"];
 
 export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   const symbol = useWidgetSymbol(widget);
@@ -49,6 +54,8 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   const interval = saved.interval ?? "AUTO";
   const chartType: ChartType = saved.chartType ?? "candles";
   const active = useMemo(() => new Set<Indicator>(saved.indicators ?? ["SMA20"]), [saved.indicators]);
+  const compare = useMemo(() => (saved.compare ?? []).filter((c) => c !== symbol), [saved.compare, symbol]);
+  const [compareDraft, setCompareDraft] = useState("");
   const save = (patch: ChartSettings) => setWidgetSettings(widget.id, patch);
   const setRange = (r: Range) => save({ range: r });
   const setChartType = (t: ChartType) => save({ chartType: t });
@@ -118,6 +125,23 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     refetchInterval:
       interval === "AUTO" ? (range === "1D" ? 8_000 : 60_000) : mins !== null && mins <= 5 ? 8_000 : mins !== null && mins < 1440 ? 30_000 : 60_000,
   });
+
+  const compareQueries = useQueries({
+    queries: compare.map((c) => ({
+      queryKey: ["history", c, range, interval],
+      queryFn: () =>
+        apiGet<Candle[]>(
+          `/api/history/${encodeURIComponent(c)}?range=${range}` +
+            (interval === "AUTO" ? "" : `&interval=${encodeURIComponent(interval)}`)
+        ),
+      refetchInterval: 60_000,
+    })),
+  });
+  const compareKey = compareQueries.map((q) => q.dataUpdatedAt).join(",");
+  const compareSeries = useMemo(
+    () => compare.map((c, i) => ({ symbol: c, data: compareQueries[i]?.data })),
+    [compare.join(","), compareKey] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Fast time -> candle lookup for the crosshair legend, independent of chart type.
   const byTime = useMemo(() => {
@@ -202,13 +226,15 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     const el = containerRef.current;
     if (!el || !candles || candles.length === 0) return;
 
+    const colors = chartColors();
     const chart = createChart(el, {
-      layout: { background: { color: "#0a0a0a" }, textColor: "#808080", fontSize: 10, attributionLogo: false },
+      layout: { background: { color: colors.background }, textColor: colors.text, fontSize: 10, attributionLogo: false },
       localization: { locale: locale() },
-      grid: { vertLines: { color: "#1a1a1a" }, horzLines: { color: "#1a1a1a" } },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       crosshair: { mode: 0 },
-      timeScale: { borderColor: "#262626", timeVisible: intraday, secondsVisible: mins !== null && mins < 1 },
-      rightPriceScale: { borderColor: "#262626" },
+      timeScale: { borderColor: colors.border, timeVisible: intraday, secondsVisible: mins !== null && mins < 1 },
+      // Comparing assets: every series is shown as % change from the first visible bar.
+      rightPriceScale: { borderColor: colors.border, mode: compareSeries.length > 0 ? PriceScaleMode.Percentage : PriceScaleMode.Normal },
       autoSize: true,
       // Mouse-wheel is left free for page scrolling — zoom via drag, pinch, or the range buttons instead.
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
@@ -216,8 +242,8 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     });
     chartRef.current = chart;
 
-    const upColor = "#00c853";
-    const downColor = "#ff3d3d";
+    const upColor = colors.up;
+    const downColor = colors.down;
 
     let main: ISeriesApi<SeriesType>;
     if (chartType === "candles") {
@@ -230,10 +256,10 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
       main = chart.addSeries(BarSeries, { upColor, downColor });
       main.setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
     } else if (chartType === "line") {
-      main = chart.addSeries(LineSeries, { color: "#ff9900", lineWidth: 1 });
+      main = chart.addSeries(LineSeries, { color: colors.accent, lineWidth: 1 });
       main.setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
     } else {
-      main = chart.addSeries(AreaSeries, { lineColor: "#ff9900", topColor: "rgba(255,153,0,0.25)", bottomColor: "rgba(255,153,0,0)" });
+      main = chart.addSeries(AreaSeries, { lineColor: colors.accent, topColor: `${colors.accent}40`, bottomColor: `${colors.accent}00` });
       main.setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
     }
 
@@ -278,6 +304,13 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
       );
     }
 
+    compareSeries.forEach((cs, i) => {
+      if (!cs.data?.length) return;
+      chart
+        .addSeries(LineSeries, { color: COMPARE_COLORS[i % COMPARE_COLORS.length], lineWidth: 2, priceLineVisible: false, title: cs.symbol })
+        .setData(cs.data.map((c) => ({ time: ts(c.time), value: c.close })));
+    });
+
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
         setLegend(candles[candles.length - 1]);
@@ -294,7 +327,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, chartType, indicatorData, intraday, mins, byTime]);
+  }, [candles, chartType, indicatorData, intraday, mins, byTime, compareSeries]);
 
   const toggleIndicator = (ind: Indicator) => {
     const next = new Set(active);
@@ -395,10 +428,36 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
           </button>
         )}
       </div>
+      {(
+        <div className="flex gap-1 px-1 pb-1 items-center flex-wrap shrink-0 text-[11px]">
+          <input
+            value={compareDraft}
+            onChange={(e) => setCompareDraft(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              const sym = normalizeSymbol(compareDraft);
+              if (sym && sym !== symbol && !compare.includes(sym)) save({ compare: [...compare, sym].slice(0, 5) });
+              setCompareDraft("");
+            }}
+            placeholder={t("+ compare (e.g. SPY)")}
+            title={t("Add another asset to compare performance in %")}
+            className="w-40 bg-[var(--panel-2)] border border-[var(--border)] px-1"
+          />
+          {compare.map((c, i) => (
+            <span key={c} className="flex items-center gap-1 border border-[var(--border)] px-1" style={{ color: COMPARE_COLORS[i % COMPARE_COLORS.length] }}>
+              {c}
+              <button className="dim hover:text-[var(--down)]" onClick={() => save({ compare: compare.filter((x) => x !== c) })}>
+                ✕
+              </button>
+            </span>
+          ))}
+          {compare.length > 0 && <span className="dim">{t("Scale in % from the first visible bar")}</span>}
+        </div>
+      )}
       {error && <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>}
       <div className="relative flex-1 min-h-0">
         {legend && (
-          <div className="absolute top-1 left-2 z-10 flex flex-col gap-0.5 text-[11px] pointer-events-none bg-[rgba(10,10,10,0.7)] px-2 py-1 rounded max-w-[95%]">
+          <div className="absolute top-1 left-2 z-10 flex flex-col gap-0.5 text-[11px] pointer-events-none bg-[var(--overlay)] px-2 py-1 rounded max-w-[95%]">
             <div className="flex gap-3">
               <span className="dim">O <span className="text-[var(--text)]">{fmt(legend.open)}</span></span>
               <span className="dim">H <span className="up">{fmt(legend.high)}</span></span>

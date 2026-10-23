@@ -14,6 +14,7 @@ import { apiGet, type Candle } from "../../lib/api";
 import { locale, t } from "../../lib/i18n";
 import { defaultRange, intervalMinutes, normalizeInterval } from "../../lib/timeframes";
 import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { chartColors } from "../../lib/theme";
 
 const DEFAULT_FRAMES = ["5m", "1h", "1D", "1W"];
 
@@ -128,19 +129,20 @@ function MiniChart({
   useEffect(() => {
     const el = ref.current;
     if (!el || !candles || candles.length === 0) return;
+    const colors = chartColors();
     const chart = createChart(el, {
-      layout: { background: { color: "#0a0a0a" }, textColor: "#808080", fontSize: 10, attributionLogo: false },
+      layout: { background: { color: colors.background }, textColor: colors.text, fontSize: 10, attributionLogo: false },
       localization: { locale: locale() },
-      grid: { vertLines: { color: "#161616" }, horzLines: { color: "#161616" } },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       crosshair: { mode: 0 },
-      timeScale: { borderColor: "#262626", timeVisible: mins !== null && mins < 1440, secondsVisible: mins !== null && mins < 1 },
-      rightPriceScale: { borderColor: "#262626" },
+      timeScale: { borderColor: colors.border, timeVisible: mins !== null && mins < 1440, secondsVisible: mins !== null && mins < 1 },
+      rightPriceScale: { borderColor: colors.border },
       autoSize: true,
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
     });
-    const up = "#00c853";
-    const down = "#ff3d3d";
+    const up = colors.up;
+    const down = colors.down;
     const series = chart.addSeries(CandlestickSeries, {
       upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down,
     });
@@ -182,7 +184,7 @@ function MiniChart({
         onBlur={apply}
         onKeyDown={(e) => e.key === "Enter" && apply()}
         title={t("Timeframe: how long each candle lasts")}
-        className="absolute top-1 left-1 z-10 w-14 bg-[rgba(10,10,10,0.8)] border border-[var(--amber-dim)] amber text-[11px] px-1"
+        className="absolute top-1 left-1 z-10 w-14 bg-[var(--overlay)] border border-[var(--amber-dim)] amber text-[11px] px-1"
       />
       {error && <div className="absolute top-7 left-1 z-10 down text-[11px]">{t((error as Error).message)}</div>}
       <div ref={ref} className="w-full h-full" />
