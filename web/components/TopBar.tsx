@@ -12,6 +12,7 @@ const ACCENTS: Array<{ id: Accent; color: string }> = [
   { id: "purple", color: "#b07cff" },
 ];
 import { LANGS, t } from "../lib/i18n";
+import CommandLine from "./CommandLine";
 
 type Status = {
   ok: boolean;
@@ -46,8 +47,6 @@ function marketStateNY(): { label: string; open: boolean } {
 }
 
 export default function TopBar() {
-  const setCommandOpen = useTerminal((s) => s.setCommandOpen);
-  const activeSymbol = useTerminal((s) => s.activeSymbol);
   const lang = useTerminal((s) => s.lang);
   const setLang = useTerminal((s) => s.setLang);
   const theme = useTerminal((s) => s.theme);
@@ -71,12 +70,7 @@ export default function TopBar() {
       <Clock tz="Europe/Rome" label="MIL" />
       <Clock tz="Europe/London" label="LDN" />
       <Clock tz="Asia/Tokyo" label="TYO" />
-      <button
-        className="term-btn flex-1 max-w-md text-left dim"
-        onClick={() => setCommandOpen(true)}
-      >
-        {activeSymbol} — {t("search symbol…")} <span className="float-right">⌘K</span>
-      </button>
+      <CommandLine />
       <span className="dim ml-auto">
         {t("feeds")}:{" "}
         {healthy.length > 0

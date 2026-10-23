@@ -5,14 +5,14 @@ import { useMemo, useState } from "react";
 import { apiGet, fmt, type Candle } from "../../lib/api";
 import { t } from "../../lib/i18n";
 import { detectSignals } from "../../lib/signals";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 
 const MAX_SYMBOLS = 40;
 
 /** Scans the active watchlist for classic daily-chart events (MA200, crosses, 52-week range, RSI, volume). */
 export default function ScannerWidget() {
   const watchlist = useTerminal((s) => s.watchlist);
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [onlyHits, setOnlyHits] = useState(true);
   const symbols = watchlist.slice(0, MAX_SYMBOLS);
 

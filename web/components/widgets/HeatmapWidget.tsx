@@ -4,14 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { apiGet } from "../../lib/api";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import { t } from "../../lib/i18n";
 
 type Cell = { symbol: string; name: string | null; sector: string; marketCap: number | null; changePercent: number | null };
 
 export default function HeatmapWidget() {
   const ref = useRef<HTMLDivElement>(null);
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [market, setMarket] = useState<"us" | "eu">("us");
   const { data, error } = useQuery({
     queryKey: ["heatmap", market],

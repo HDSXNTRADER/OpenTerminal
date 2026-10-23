@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, fmtBig, pctClass } from "../../lib/api";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
 import { t } from "../../lib/i18n";
 
@@ -15,7 +15,7 @@ type Row = {
 };
 
 export default function ScreenerWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [market, setMarket] = useState<"us" | "eu">("us");
   const [sector, setSector] = useState("");
   const [changeMin, setChangeMin] = useState("");

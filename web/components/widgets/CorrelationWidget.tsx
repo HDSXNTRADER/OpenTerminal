@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { apiGet, fmt, type Candle } from "../../lib/api";
 import { t } from "../../lib/i18n";
 import { pearson, returnsByDay } from "../../lib/stats";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 
 const PERIODS = ["3M", "6M", "1Y"] as const;
 const MAX_SYMBOLS = 12;
@@ -18,7 +18,7 @@ function tint(r: number | null): string | undefined {
 /** Correlation of daily returns between the symbols of the active watchlist. */
 export default function CorrelationWidget() {
   const watchlist = useTerminal((s) => s.watchlist);
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [period, setPeriod] = useState<(typeof PERIODS)[number]>("6M");
   const symbols = watchlist.slice(0, MAX_SYMBOLS);
 

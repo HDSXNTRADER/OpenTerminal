@@ -27,6 +27,14 @@ const ITEMS: Array<{ type: WidgetType; label: string; key: string }> = [
   { type: "seasonality", label: "SEASONALITY", key: "" },
   { type: "correlation", label: "CORRELATION", key: "" },
   { type: "brief", label: "AI BRIEF", key: "" },
+  { type: "des", label: "COMPANY (DES)", key: "" },
+  { type: "financials", label: "FINANCIALS (FA)", key: "" },
+  { type: "anr", label: "ANALYSTS (ANR)", key: "" },
+  { type: "peers", label: "PEERS (RV)", key: "" },
+  { type: "wei", label: "WORLD INDEXES (WEI)", key: "" },
+  { type: "commodities", label: "COMMODITIES", key: "" },
+  { type: "fx", label: "CURRENCIES (FXC)", key: "" },
+  { type: "curves", label: "YIELD CURVES (GC)", key: "" },
 ];
 
 export default function Sidebar() {
@@ -34,7 +42,7 @@ export default function Sidebar() {
   const resetWorkspace = useTerminal((s) => s.resetWorkspace);
 
   return (
-    <nav className="w-36 bg-[var(--panel)] border-r border-[var(--border)] flex flex-col shrink-0">
+    <nav className="w-36 bg-[var(--panel)] border-r border-[var(--border)] flex flex-col shrink-0 overflow-y-auto">
       <div className="dim px-2 py-1 text-[10px] uppercase tracking-wider border-b border-[var(--border)]">
         {t("Add widget")}
       </div>

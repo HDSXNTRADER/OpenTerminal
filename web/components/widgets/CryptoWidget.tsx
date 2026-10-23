@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet, fmt, fmtBig, pctClass } from "../../lib/api";
 import Flash from "../Flash";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import { t } from "../../lib/i18n";
 
 type CryptoRow = {
@@ -37,7 +37,7 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function CryptoWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const { data = [], error } = useQuery({
     queryKey: ["crypto"],
     queryFn: () => apiGet<CryptoRow[]>("/api/crypto"),

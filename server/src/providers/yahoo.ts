@@ -314,3 +314,145 @@ export async function options(symbol: string, date?: number): Promise<any> {
   };
 }
 
+
+// ---- company profile + analyst consensus (quoteSummary) ----
+
+export type CompanyProfile = {
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  industry: string | null;
+  country: string | null;
+  city: string | null;
+  website: string | null;
+  employees: number | null;
+  description: string | null;
+  officers: Array<{ name: string; title: string | null }>;
+  exchange: string | null;
+  currency: string | null;
+  marketCap: number | null;
+  analysts: {
+    recommendation: string | null;
+    /** 1 = strong buy … 5 = strong sell. */
+    mean: number | null;
+    count: number | null;
+    targetMean: number | null;
+    targetHigh: number | null;
+    targetLow: number | null;
+    targetMedian: number | null;
+    price: number | null;
+    /** Counts per month, most recent first ("0m" = this month). */
+    trend: Array<{ period: string; strongBuy: number; buy: number; hold: number; sell: number; strongSell: number }>;
+    changes: Array<{ date: number; firm: string; from: string | null; to: string | null; action: string | null }>;
+  };
+  source: string;
+};
+
+const raw = (v: any): number | null => n(v?.raw ?? v);
+
+export async function profile(symbol: string): Promise<CompanyProfile> {
+  const modules = "assetProfile,price,financialData,recommendationTrend,upgradeDowngradeHistory";
+  const json = await yfetch(
+    `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`,
+    true
+  );
+  const r = json?.quoteSummary?.result?.[0];
+  if (!r) throw new Error("yahoo: no profile for " + symbol);
+  const ap = r.assetProfile ?? {};
+  const pr = r.price ?? {};
+  const fd = r.financialData ?? {};
+  return {
+    symbol: pr.symbol ?? symbol,
+    name: pr.longName ?? pr.shortName ?? null,
+    sector: ap.sector ?? null,
+    industry: ap.industry ?? null,
+    country: ap.country ?? null,
+    city: ap.city ?? null,
+    website: ap.website ?? null,
+    employees: n(ap.fullTimeEmployees),
+    description: ap.longBusinessSummary ?? null,
+    officers: (ap.companyOfficers ?? []).slice(0, 6).map((o: any) => ({ name: o.name, title: o.title ?? null })),
+    exchange: pr.exchangeName ?? null,
+    currency: pr.currency ?? fd.financialCurrency ?? null,
+    marketCap: raw(pr.marketCap),
+    analysts: {
+      recommendation: fd.recommendationKey ?? null,
+      mean: raw(fd.recommendationMean),
+      count: raw(fd.numberOfAnalystOpinions),
+      targetMean: raw(fd.targetMeanPrice),
+      targetHigh: raw(fd.targetHighPrice),
+      targetLow: raw(fd.targetLowPrice),
+      targetMedian: raw(fd.targetMedianPrice),
+      price: raw(fd.currentPrice ?? pr.regularMarketPrice),
+      trend: (r.recommendationTrend?.trend ?? []).map((t: any) => ({
+        period: t.period,
+        strongBuy: t.strongBuy ?? 0,
+        buy: t.buy ?? 0,
+        hold: t.hold ?? 0,
+        sell: t.sell ?? 0,
+        strongSell: t.strongSell ?? 0,
+      })),
+      changes: (r.upgradeDowngradeHistory?.history ?? []).slice(0, 15).map((h: any) => ({
+        date: h.epochGradeDate,
+        firm: h.firm,
+        from: h.fromGrade || null,
+        to: h.toGrade || null,
+        action: h.action ?? null,
+      })),
+    },
+    source: "yahoo",
+  };
+}
+
+// ---- financial statements (fundamentals-timeseries) ----
+
+export const STATEMENT_FIELDS = {
+  income: ["TotalRevenue", "GrossProfit", "OperatingIncome", "EBITDA", "NetIncome", "DilutedEPS"],
+  balance: ["TotalAssets", "TotalLiabilitiesNetMinorityInterest", "StockholdersEquity", "CashAndCashEquivalents", "TotalDebt"],
+  cashflow: ["OperatingCashFlow", "CapitalExpenditure", "FreeCashFlow"],
+} as const;
+
+export type Statements = {
+  symbol: string;
+  freq: "annual" | "quarterly";
+  /** Period end dates (YYYY-MM-DD), oldest first. */
+  periods: string[];
+  /** field -> value per period (aligned with `periods`). */
+  rows: Record<string, Array<number | null>>;
+  currency: string | null;
+  source: string;
+};
+
+export async function statements(symbol: string, freq: "annual" | "quarterly"): Promise<Statements> {
+  const fields = Object.values(STATEMENT_FIELDS).flat();
+  const types = fields.map((f) => freq + f).join(",");
+  const now = Math.floor(Date.now() / 1000);
+  const json = await yfetch(
+    `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(
+      symbol
+    )}?type=${types}&period1=${now - 6 * 365 * 86_400}&period2=${now}`,
+    true
+  );
+  const results: any[] = json?.timeseries?.result ?? [];
+  const byField = new Map<string, Map<string, number | null>>();
+  const dates = new Set<string>();
+  let currency: string | null = null;
+  for (const r of results) {
+    const type: string = r?.meta?.type?.[0] ?? "";
+    const field = type.slice(freq.length);
+    const points: any[] = r[type] ?? [];
+    const m = new Map<string, number | null>();
+    for (const p of points) {
+      if (!p?.asOfDate) continue;
+      dates.add(p.asOfDate);
+      m.set(p.asOfDate, raw(p.reportedValue));
+      currency ??= p.currencyCode ?? null;
+    }
+    byField.set(field, m);
+  }
+  const periods = [...dates].sort().slice(freq === "annual" ? -5 : -8);
+  if (periods.length === 0) throw new Error("yahoo: no financial statements for " + symbol);
+  const rows: Statements["rows"] = {};
+  for (const f of fields) rows[f] = periods.map((d) => byField.get(f)?.get(d) ?? null);
+  return { symbol, freq, periods, rows, currency, source: "yahoo" };
+}

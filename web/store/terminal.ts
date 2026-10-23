@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { normalizeSymbol } from "../lib/symbol";
@@ -31,13 +32,23 @@ export type WidgetType =
   | "seasonality"
   | "correlation"
   | "scanner"
-  | "brief";
+  | "brief"
+  | "commodities"
+  | "wei"
+  | "fx"
+  | "des"
+  | "anr"
+  | "peers"
+  | "financials"
+  | "curves";
 
 export type WidgetInstance = {
   id: string;
   type: WidgetType;
   symbol?: string;
   linked: boolean; // follows the globally active symbol
+  /** Color link group (1-4): widgets in the same group share their own symbol. */
+  group?: number;
   /** Per-widget preferences (e.g. chart timeframe), saved with the workspace. */
   settings?: Record<string, unknown>;
 };
@@ -76,6 +87,9 @@ type TerminalState = {
   layout: LayoutItem[];
   watchlist: string[];
   commandOpen: boolean;
+  /** Help screen with every command and shortcut. Not saved. */
+  helpOpen: boolean;
+  setHelpOpen: (open: boolean) => void;
   setActiveSymbol: (s: string) => void;
   setCommandOpen: (open: boolean) => void;
   addWidget: (type: WidgetType, symbol?: string) => void;
@@ -83,6 +97,11 @@ type TerminalState = {
   setWidgetSymbol: (id: string, symbol: string) => void;
   toggleLinked: (id: string) => void;
   setWidgetSettings: (id: string, patch: Record<string, unknown>) => void;
+  /** Symbol shown by each color group. */
+  groupSymbols: Record<string, string>;
+  setGroupSymbol: (group: number, symbol: string) => void;
+  /** Cycles a widget's link: global → color groups → unlinked (if `canUnlink`) → global. */
+  cycleLink: (id: string, canUnlink: boolean) => void;
   setLayout: (layout: LayoutItem[]) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
@@ -212,6 +231,14 @@ const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   correlation: { w: 7, h: 11 },
   scanner: { w: 7, h: 10 },
   brief: { w: 6, h: 12 },
+  commodities: { w: 5, h: 13 },
+  wei: { w: 6, h: 14 },
+  fx: { w: 7, h: 8 },
+  des: { w: 5, h: 12 },
+  anr: { w: 5, h: 11 },
+  peers: { w: 9, h: 9 },
+  financials: { w: 8, h: 11 },
+  curves: { w: 7, h: 10 },
 };
 
 export const useTerminal = create<TerminalState>()(
@@ -233,6 +260,8 @@ export const useTerminal = create<TerminalState>()(
         if (sym) set({ activeSymbol: sym });
       },
       setCommandOpen: (open) => set({ commandOpen: open }),
+      helpOpen: false,
+      setHelpOpen: (open) => set({ helpOpen: open }),
       addWidget: (type, symbol) =>
         set((st) => {
           const id = uid(`w-${type}`);
@@ -252,6 +281,8 @@ export const useTerminal = create<TerminalState>()(
       setWidgetSymbol: (id, symbol) => {
         const sym = normalizeSymbol(symbol);
         if (!sym) return;
+        const group = get().widgets.find((w) => w.id === id)?.group;
+        if (group) return set((st) => ({ groupSymbols: { ...st.groupSymbols, [group]: sym } }));
         set((st) => ({
           widgets: st.widgets.map((w) => (w.id === id ? { ...w, symbol: sym, linked: false } : w)),
         }));
@@ -264,6 +295,26 @@ export const useTerminal = create<TerminalState>()(
         set((st) => ({
           widgets: st.widgets.map((w) => (w.id === id ? { ...w, settings: { ...w.settings, ...patch } } : w)),
         })),
+      groupSymbols: {},
+      setGroupSymbol: (group, symbol) => {
+        const sym = normalizeSymbol(symbol);
+        if (sym) set((st) => ({ groupSymbols: { ...st.groupSymbols, [group]: sym } }));
+      },
+      cycleLink: (id, canUnlink) =>
+        set((st) => {
+          const w = st.widgets.find((x) => x.id === id);
+          if (!w) return {};
+          const shown = (w.group && st.groupSymbols[w.group]) || (w.linked ? st.activeSymbol : w.symbol ?? st.activeSymbol);
+          let next: WidgetInstance;
+          if (!w.group && (w.linked || !canUnlink)) next = { ...w, group: 1, linked: false, symbol: shown };
+          else if (w.group && w.group < LINK_GROUPS.length) next = { ...w, group: w.group + 1, symbol: shown };
+          else if (w.group && canUnlink) next = { ...w, group: undefined, linked: false, symbol: shown };
+          else next = { ...w, group: undefined, linked: true };
+          // A group nobody has used yet starts on the symbol the widget is showing now.
+          const groupSymbols =
+            next.group && !st.groupSymbols[next.group] ? { ...st.groupSymbols, [next.group]: shown } : st.groupSymbols;
+          return { widgets: st.widgets.map((x) => (x.id === id ? next : x)), groupSymbols };
+        }),
       setLayout: (layout) => set({ layout }),
       addToWatchlist: (s) => {
         const sym = normalizeSymbol(s);
@@ -398,7 +449,7 @@ export const useTerminal = create<TerminalState>()(
     {
       name: "openterminal-workspace",
       // Transient UI state stays out of storage.
-      partialize: ({ commandOpen: _c, maximized: _m, presenting: _p, ...rest }) => rest,
+      partialize: ({ commandOpen: _c, helpOpen: _h, maximized: _m, presenting: _p, ...rest }) => rest,
       version: 1,
       migrate: (persisted, version) => {
         const st = persisted as Partial<TerminalState>;
@@ -409,8 +460,28 @@ export const useTerminal = create<TerminalState>()(
   )
 );
 
-/** Symbol a widget should display: its own, or the active one when linked. */
+/** Colors of the link groups, in order (group 1 = first). */
+export const LINK_GROUPS = ["#e5484d", "#30a46c", "#3e63dd", "#d6409f"];
+
+/** Symbol a widget should display: its group's, the active one when linked, or its own. */
 export function useWidgetSymbol(widget: WidgetInstance): string {
   const active = useTerminal((s) => s.activeSymbol);
+  const groupSym = useTerminal((s) => (widget.group ? s.groupSymbols[widget.group] : undefined));
+  if (widget.group) return groupSym ?? widget.symbol ?? active;
   return widget.linked ? active : widget.symbol ?? active;
+}
+
+/** The widget a component is rendered inside (set by the workspace panel). */
+export const WidgetContext = createContext<WidgetInstance | null>(null);
+
+/**
+ * Picks a symbol from a list inside a widget: drives that widget's color group
+ * when it has one, otherwise the globally active symbol.
+ */
+export function usePickSymbol(): (symbol: string) => void {
+  const widget = useContext(WidgetContext);
+  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setGroupSymbol = useTerminal((s) => s.setGroupSymbol);
+  const group = widget?.group;
+  return (symbol) => (group ? setGroupSymbol(group, symbol) : setActiveSymbol(symbol));
 }

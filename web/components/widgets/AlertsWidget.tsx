@@ -6,14 +6,14 @@ import { apiGet, fmt, type Quote } from "../../lib/api";
 import { playAlertSound } from "../../lib/alerts";
 import { t } from "../../lib/i18n";
 import { normalizeSymbol, symbolsParam } from "../../lib/symbol";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 
 export default function AlertsWidget() {
   const alerts = useTerminal((s) => s.alerts);
   const addAlert = useTerminal((s) => s.addAlert);
   const removeAlert = useTerminal((s) => s.removeAlert);
   const activeSymbol = useTerminal((s) => s.activeSymbol);
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [symbol, setSymbol] = useState("");
   const [price, setPrice] = useState("");
   const [bad, setBad] = useState(false);

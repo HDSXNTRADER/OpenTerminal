@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, fmtBig, pctClass, type Quote } from "../../lib/api";
 import { normalizeSymbol, symbolsParam } from "../../lib/symbol";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
 import { t } from "../../lib/i18n";
 
@@ -12,7 +12,7 @@ export default function WatchlistWidget() {
   const watchlist = useTerminal((s) => s.watchlist);
   const addToWatchlist = useTerminal((s) => s.addToWatchlist);
   const removeFromWatchlist = useTerminal((s) => s.removeFromWatchlist);
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [input, setInput] = useState("");
   const [invalid, setInvalid] = useState(false);
   const watchlists = useTerminal((s) => s.watchlists);

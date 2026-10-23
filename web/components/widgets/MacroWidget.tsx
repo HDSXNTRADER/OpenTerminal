@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, pctClass } from "../../lib/api";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from "recharts";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
 import { t } from "../../lib/i18n";
 
@@ -17,7 +17,7 @@ type MacroData = {
 };
 
 export default function MacroWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const [region, setRegion] = useState<"us" | "eu">("us");
   const { data, error } = useQuery({
     queryKey: ["macro", region],

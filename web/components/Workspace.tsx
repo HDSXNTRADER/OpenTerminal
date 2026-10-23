@@ -5,7 +5,7 @@ import GridLayout, { WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { normalizeSymbol } from "../lib/symbol";
-import { GRID, useTerminal, type WidgetInstance } from "../store/terminal";
+import { GRID, LINK_GROUPS, useTerminal, WidgetContext, type WidgetInstance } from "../store/terminal";
 import QuoteWidget from "./widgets/QuoteWidget";
 import ChartWidget from "./widgets/ChartWidget";
 import WatchlistWidget from "./widgets/WatchlistWidget";
@@ -29,8 +29,17 @@ import SeasonalityWidget from "./widgets/SeasonalityWidget";
 import CorrelationWidget from "./widgets/CorrelationWidget";
 import ScannerWidget from "./widgets/ScannerWidget";
 import BriefWidget from "./widgets/BriefWidget";
+import CommoditiesWidget from "./widgets/CommoditiesWidget";
+import WorldIndexesWidget from "./widgets/WorldIndexesWidget";
+import FxMatrixWidget from "./widgets/FxMatrixWidget";
+import DescriptionWidget from "./widgets/DescriptionWidget";
+import AnalystsWidget from "./widgets/AnalystsWidget";
+import PeersWidget from "./widgets/PeersWidget";
+import FinancialsWidget from "./widgets/FinancialsWidget";
+import CurvesWidget from "./widgets/CurvesWidget";
 import WidgetErrorBoundary from "./WidgetErrorBoundary";
 import { t } from "../lib/i18n";
+import { hovered } from "../lib/commands";
 
 const Grid = WidthProvider(GridLayout);
 
@@ -59,6 +68,14 @@ function WidgetBody({ widget }: { widget: WidgetInstance }) {
     case "correlation": return <CorrelationWidget />;
     case "scanner": return <ScannerWidget />;
     case "brief": return <BriefWidget widget={widget} />;
+    case "commodities": return <CommoditiesWidget />;
+    case "wei": return <WorldIndexesWidget />;
+    case "fx": return <FxMatrixWidget />;
+    case "des": return <DescriptionWidget widget={widget} />;
+    case "anr": return <AnalystsWidget widget={widget} />;
+    case "peers": return <PeersWidget widget={widget} />;
+    case "financials": return <FinancialsWidget widget={widget} />;
+    case "curves": return <CurvesWidget widget={widget} />;
   }
 }
 
@@ -115,13 +132,45 @@ const TITLES: Record<string, string> = {
   calendar: "Calendar", insider: "Insider Transactions", fundamentals: "Fundamentals (OpenBB)", tv: "Live TV", recap: "Market Recap",
   alerts: "Price Alerts", multichart: "Multi-Timeframe", brazil: "Brazil", seasonality: "Seasonality",
   correlation: "Correlation", scanner: "Pattern Scanner", brief: "Daily AI Brief",
+  commodities: "Commodities", wei: "World Indexes", fx: "Currency Matrix", des: "Company Description",
+  anr: "Analyst Consensus", peers: "Peer Comparison", financials: "Financial Statements", curves: "Yield Curves",
 };
 
-const SYMBOL_AWARE = new Set(["quote", "chart", "news", "options", "insider", "fundamentals", "multichart", "seasonality"]);
+export const SYMBOL_AWARE = new Set([
+  "quote", "chart", "news", "options", "insider", "fundamentals", "multichart", "seasonality",
+  "brief", "des", "anr", "peers", "financials",
+]);
+
+/** Widgets that only pick symbols (lists, maps): their link sends the click to the global symbol or a color group. */
+const SYMBOL_PICKERS = new Set([
+  "watchlist", "screener", "heatmap", "crypto", "macro", "recap", "alerts", "brazil", "scanner", "correlation",
+  "commodities", "wei", "fx", "peers",
+]);
+
+function LinkButton({ widget: w }: { widget: WidgetInstance }) {
+  const cycleLink = useTerminal((s) => s.cycleLink);
+  const aware = SYMBOL_AWARE.has(w.type);
+  const color = w.group ? LINK_GROUPS[w.group - 1] : undefined;
+  const title = w.group
+    ? t("Color group {n}: widgets with the same color share their ticker (click for next)", { n: w.group })
+    : aware
+      ? t(w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)")
+      : t("Sends clicks to the active symbol (click to pick a color group)");
+  return (
+    <button
+      title={title}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={() => cycleLink(w.id, aware)}
+      className={color ? "" : w.linked ? "text-[var(--amber)]" : "dim"}
+      style={color ? { color } : undefined}
+    >
+      {w.group ? "●" : "⛓"}
+    </button>
+  );
+}
 
 function Panel({ widget: w }: { widget: WidgetInstance }) {
   const removeWidget = useTerminal((s) => s.removeWidget);
-  const toggleLinked = useTerminal((s) => s.toggleLinked);
   const activeSymbol = useTerminal((s) => s.activeSymbol);
   const maximized = useTerminal((s) => s.maximized);
   const setMaximized = useTerminal((s) => s.setMaximized);
@@ -129,7 +178,12 @@ function Panel({ widget: w }: { widget: WidgetInstance }) {
   const toggleMax = () => setMaximized(isMax ? null : w.id);
 
   return (
-    <div className="terminal-panel">
+    <div
+      className="terminal-panel"
+      data-widget-id={w.id}
+      onMouseEnter={() => (hovered.id = w.id)}
+      onMouseLeave={() => hovered.id === w.id && (hovered.id = null)}
+      style={w.group ? { borderTop: `2px solid ${LINK_GROUPS[w.group - 1]}` } : undefined}>
       {/* The grid swallows mouseup/click on the drag handle, so detect the double-click on mousedown. */}
       <div className="panel-title" onMouseDown={(e) => e.detail === 2 && toggleMax()}>
         <span>
@@ -137,16 +191,7 @@ function Panel({ widget: w }: { widget: WidgetInstance }) {
           {SYMBOL_AWARE.has(w.type) && <SymbolTag widget={w} activeSymbol={activeSymbol} />}
         </span>
         <span className="flex gap-2 items-center">
-          {SYMBOL_AWARE.has(w.type) && (
-            <button
-              title={t(w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)")}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={() => toggleLinked(w.id)}
-              className={w.linked ? "text-[var(--amber)]" : "dim"}
-            >
-              ⛓
-            </button>
-          )}
+          {(SYMBOL_AWARE.has(w.type) || SYMBOL_PICKERS.has(w.type)) && <LinkButton widget={w} />}
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={toggleMax}
@@ -167,7 +212,9 @@ function Panel({ widget: w }: { widget: WidgetInstance }) {
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         <WidgetErrorBoundary name={t(TITLES[w.type])}>
-          <WidgetBody widget={w} />
+          <WidgetContext.Provider value={w}>
+            <WidgetBody widget={w} />
+          </WidgetContext.Provider>
         </WidgetErrorBoundary>
       </div>
     </div>

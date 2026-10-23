@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiGet, fmt, fmtBig, pctClass, type Quote } from "../../lib/api";
 import { t } from "../../lib/i18n";
 import { symbolsParam } from "../../lib/symbol";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
 
 type Rate = { date: string; value: number } | null;
@@ -25,7 +25,7 @@ const STOCKS = [
 
 /** Brazil at a glance: Ibovespa, dollar, policy rates (BCB) and the main B3 stocks. */
 export default function BrazilWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const all = [...INDEXES.map(([s]) => s), ...STOCKS];
   const { data: quotes = [], error } = useQuery({
     queryKey: ["brazil-quotes"],

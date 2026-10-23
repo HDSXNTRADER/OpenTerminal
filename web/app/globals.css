@@ -231,3 +231,12 @@ button.term-btn.active {
   background: var(--amber-dim);
   opacity: 0.6;
 }
+
+/* A widget reached from the command line blinks its border. */
+.widget-focus {
+  animation: widget-focus-anim 1.2s ease-out;
+}
+@keyframes widget-focus-anim {
+  0%, 40% { box-shadow: 0 0 0 2px var(--amber); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}

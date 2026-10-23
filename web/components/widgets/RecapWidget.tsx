@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet, fmt, pctClass } from "../../lib/api";
 import { isSafeHttpUrl } from "../../lib/links";
-import { useTerminal } from "../../store/terminal";
+import { usePickSymbol, useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
 import { t } from "../../lib/i18n";
 
@@ -24,7 +24,7 @@ type Recap = {
 };
 
 export default function RecapWidget() {
-  const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const setActiveSymbol = usePickSymbol();
   const { data, error } = useQuery({
     queryKey: ["recap"],
     queryFn: () => apiGet<Recap>("/api/recap"),

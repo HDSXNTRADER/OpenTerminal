@@ -7,6 +7,9 @@ import Workspace from "./Workspace";
 import CommandPalette from "./CommandPalette";
 import WorkspaceTabs from "./WorkspaceTabs";
 import AlertWatcher from "./AlertWatcher";
+import HelpOverlay from "./HelpOverlay";
+import { focusCommandLine } from "./CommandLine";
+import { hovered } from "../lib/commands";
 import { useTerminal } from "../store/terminal";
 
 export default function Terminal() {
@@ -30,6 +33,40 @@ export default function Terminal() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandOpen(true);
+        return;
+      }
+      const fkeys: Record<string, () => void> = {
+        F1: () => useTerminal.getState().setHelpOpen(!useTerminal.getState().helpOpen),
+        F2: focusCommandLine,
+        F3: () => {
+          const st = useTerminal.getState();
+          if (st.maximized) st.setMaximized(null);
+          else if (hovered.id) st.setMaximized(hovered.id);
+        },
+        F4: () => {
+          const st = useTerminal.getState();
+          const i = st.workspaces.findIndex((w) => w.id === st.activeWorkspace);
+          const n = st.workspaces.length;
+          st.switchWorkspace(st.workspaces[(i + (e.shiftKey ? n - 1 : 1)) % n].id);
+        },
+        F8: () => {
+          const st = useTerminal.getState();
+          st.setTheme(st.theme === "dark" ? "light" : "dark");
+        },
+        F9: () => {
+          const st = useTerminal.getState();
+          if (st.presenting) {
+            st.setPresenting(0);
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+          } else {
+            st.setPresenting(20);
+            document.documentElement.requestFullscreen?.().catch(() => {});
+          }
+        },
+      };
+      if (fkeys[e.key] && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        fkeys[e.key]();
         return;
       }
       if (e.altKey) {
@@ -70,6 +107,7 @@ export default function Terminal() {
       </div>
       <CommandPalette />
       <AlertWatcher />
+      <HelpOverlay />
     </div>
   );
 }
