@@ -67,7 +67,15 @@ export const FEEDS = {
     { url: "https://feeds.bloomberg.com/markets/news.rss", publisher: "Bloomberg" },
     { url: "https://feeds.bloomberg.com/economics/news.rss", publisher: "Bloomberg" },
   ],
-  yahoo: [{ url: "https://finance.yahoo.com/news/rssindex", publisher: "Yahoo Finance" }],
+  yahoo: [
+    { url: "https://finance.yahoo.com/news/rssindex", publisher: "Yahoo Finance" },
+    // rssindex answers 404 from some regions (seen from Brazil); the headline
+    // feed for the major US indices is served everywhere.
+    {
+      url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC,%5EIXIC,%5EDJI&region=US&lang=en-US",
+      publisher: "Yahoo Finance",
+    },
+  ],
 } as const;
 
 export type FeedSource = keyof typeof FEEDS;
