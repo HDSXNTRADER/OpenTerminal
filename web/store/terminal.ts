@@ -27,6 +27,8 @@ export type WidgetInstance = {
   type: WidgetType;
   symbol?: string;
   linked: boolean; // follows the globally active symbol
+  /** Per-widget preferences (e.g. chart timeframe), saved with the workspace. */
+  settings?: Record<string, unknown>;
 };
 
 export type LayoutItem = { i: string; x: number; y: number; w: number; h: number };
@@ -43,6 +45,7 @@ type TerminalState = {
   removeWidget: (id: string) => void;
   setWidgetSymbol: (id: string, symbol: string) => void;
   toggleLinked: (id: string) => void;
+  setWidgetSettings: (id: string, patch: Record<string, unknown>) => void;
   setLayout: (layout: LayoutItem[]) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
@@ -57,13 +60,31 @@ const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: "w-macro", type: "macro", linked: false },
 ];
 
+/**
+ * Grid geometry. A fine grid (48 columns, 10px rows) lets widgets be placed
+ * and sized almost freely while still lining up neatly.
+ */
+export const GRID = { cols: 48, rowHeight: 10, margin: 4 } as const;
+
+// Layouts were first stored on a 12-column grid with 30px rows. These scale
+// a v0 layout item to the current grid so saved workspaces keep their look.
+const V0_COL = GRID.cols / 12;
+const V0_ROW = (30 + 4) / (GRID.rowHeight + GRID.margin);
+const fromV0 = <T extends { x: number; y: number; w: number; h: number }>(l: T): T => ({
+  ...l,
+  x: Math.round(l.x * V0_COL),
+  w: Math.round(l.w * V0_COL),
+  y: Math.round(l.y * V0_ROW),
+  h: Math.round(l.h * V0_ROW),
+});
+
 const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: "w-chart", x: 0, y: 0, w: 7, h: 12 },
   { i: "w-quote", x: 7, y: 0, w: 5, h: 6 },
   { i: "w-watchlist", x: 7, y: 6, w: 5, h: 6 },
   { i: "w-news", x: 0, y: 12, w: 7, h: 7 },
   { i: "w-macro", x: 7, y: 12, w: 5, h: 7 },
-];
+].map(fromV0);
 
 const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   quote: { w: 5, h: 6 },
@@ -100,11 +121,11 @@ export const useTerminal = create<TerminalState>()(
       addWidget: (type, symbol) =>
         set((st) => {
           const id = `w-${type}-${Date.now()}`;
-          const size = SIZE_BY_TYPE[type];
+          const { w, h } = fromV0({ x: 0, y: 0, ...SIZE_BY_TYPE[type] });
           const maxY = st.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
           return {
             widgets: [...st.widgets, { id, type, symbol, linked: !symbol }],
-            layout: [...st.layout, { i: id, x: 0, y: maxY, ...size }],
+            layout: [...st.layout, { i: id, x: 0, y: maxY, w, h }],
           };
         }),
       removeWidget: (id) =>
@@ -123,6 +144,10 @@ export const useTerminal = create<TerminalState>()(
         set((st) => ({
           widgets: st.widgets.map((w) => (w.id === id ? { ...w, linked: !w.linked } : w)),
         })),
+      setWidgetSettings: (id, patch) =>
+        set((st) => ({
+          widgets: st.widgets.map((w) => (w.id === id ? { ...w, settings: { ...w.settings, ...patch } } : w)),
+        })),
       setLayout: (layout) => set({ layout }),
       addToWatchlist: (s) => {
         const sym = normalizeSymbol(s);
@@ -134,7 +159,15 @@ export const useTerminal = create<TerminalState>()(
       removeFromWatchlist: (s) => set((st) => ({ watchlist: st.watchlist.filter((x) => x !== s) })),
       resetWorkspace: () => set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT }),
     }),
-    { name: "openterminal-workspace" }
+    {
+      name: "openterminal-workspace",
+      version: 1,
+      migrate: (persisted, version) => {
+        const st = persisted as Partial<TerminalState>;
+        if (version < 1 && Array.isArray(st.layout)) st.layout = st.layout.map(fromV0);
+        return st as TerminalState;
+      },
+    }
   )
 );
 

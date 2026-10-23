@@ -1,3 +1,4 @@
+import { intradayLookbackDays, pickBase, resample, type Interval } from "../timeframe.js";
 // A single hardcoded User-Agent makes every self-hosted install share one
 // fingerprint: when the app's traffic grows, providers can throttle the whole
 // fleet by blocking that one string (observed: sustained HTTP 429 from Yahoo
@@ -232,6 +233,35 @@ export async function history(symbol: string, range: string, interval: string): 
     candles.push({ time: ts[i], open: o, high: h, low: l, close: c, volume: q.volume?.[i] ?? 0 });
   }
   return candles;
+}
+
+const YAHOO_NATIVE = {
+  minutes: [[1, "1m"], [2, "2m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "60m"]] as Array<[number, string]>,
+  day: "1d",
+  week: "1wk",
+  month: "1mo",
+};
+
+/** History at any timeframe: fetches the closest native Yahoo interval and resamples. */
+export async function historyInterval(symbol: string, startMs: number, iv: Interval, now = Date.now()): Promise<Candle[]> {
+  const { base, baseMinutes } = pickBase(iv, YAHOO_NATIVE);
+  const start = Math.max(startMs, now - intradayLookbackDays(baseMinutes) * 86_400_000, 0);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${Math.floor(
+    start / 1000
+  )}&period2=${Math.floor(now / 1000)}&interval=${base}&includePrePost=false`;
+  const json = await yfetch(url);
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error("yahoo: no chart data for " + symbol);
+  const ts: number[] = result.timestamp ?? [];
+  const q = result.indicators?.quote?.[0] ?? {};
+  const candles: Candle[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const [o, h, l, c] = [q.open?.[i], q.high?.[i], q.low?.[i], q.close?.[i]];
+    if (o == null || h == null || l == null || c == null) continue;
+    candles.push({ time: ts[i], open: o, high: h, low: l, close: c, volume: q.volume?.[i] ?? 0 });
+  }
+  if (candles.length === 0) throw new Error("yahoo: empty history for " + symbol);
+  return resample(candles, iv);
 }
 
 // ---- search ----

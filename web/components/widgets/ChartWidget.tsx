@@ -14,9 +14,51 @@ import {
 } from "lightweight-charts";
 import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
-import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 
-const RANGES = ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"] as const;
+const RANGES = ["1D", "5D", "1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"] as const;
+// "AUTO" lets the server pick a bar size that suits the range (the original behaviour).
+const INTERVALS = ["AUTO", "30s", "1m", "5m", "15m", "30m", "1h", "4h", "1D", "1W", "1M"] as const;
+const RANGE_DAYS: Record<Range, number> = {
+  "1D": 1, "5D": 5, "1M": 31, "3M": 92, "6M": 183, YTD: 366, "1Y": 366, "5Y": 1830, MAX: 20_000,
+};
+const UNIT_MINUTES: Record<string, number> = { s: 1 / 60, m: 1, h: 60, D: 1440, W: 10_080, M: 43_200 };
+
+/** Bar length in minutes for "30s", "15m", "4h", "1D", "2W", "1M"... or null if not a valid timeframe. */
+function intervalMinutes(iv: string): number | null {
+  const m = /^(\d{1,4})(s|m|h|D|W|M)$/.exec(iv);
+  return m && Number(m[1]) > 0 ? Number(m[1]) * UNIT_MINUTES[m[2]] : null;
+}
+
+/** Normalise user input like "45 min", "2H", "3d" to the server's format. */
+function normalizeInterval(raw: string): string | null {
+  const t = raw.trim();
+  // Capital M is months (like TradingView); lowercase m is minutes.
+  if (/^\d{1,4}M$/.test(t)) return intervalMinutes(t) ? t : null;
+  const m = /^(\d{1,4})\s*(s|sec|m|min|h|d|w|mo)$/i.exec(t);
+  if (!m) return null;
+  const u = m[2].toLowerCase();
+  const unit = u.startsWith("s") ? "s" : u === "mo" ? "M" : u.startsWith("m") ? "m" : u === "h" ? "h" : u === "d" ? "D" : "W";
+  const iv = `${Number(m[1])}${unit}`;
+  return intervalMinutes(iv) ? iv : null;
+}
+
+/**
+ * Whether a range makes sense for a bar size: free data sources only keep
+ * fine bars for a short window (1m ~7 days, under 1h ~60 days, hourly ~2
+ * years, seconds a few hours), and a range should hold at least two bars.
+ */
+function rangeAllowed(range: Range, interval: string): boolean {
+  if (interval === "AUTO") return true;
+  const mins = intervalMinutes(interval);
+  if (!mins) return true;
+  const days = RANGE_DAYS[range];
+  if (mins < 1 && days > 1) return false;
+  if (mins === 1 && days > 5) return false;
+  if (mins < 60 && days > 31) return false;
+  if (mins < 1440 && days > 366) return false;
+  return (days * 1440) / mins >= 2;
+}
 const CHART_TYPES = ["candles", "bars", "line", "area"] as const;
 const INDICATORS = ["SMA20", "SMA50", "SMA200", "EMA20", "VWAP", "BOLL", "RSI", "MACD"] as const;
 
@@ -32,19 +74,42 @@ const INDICATOR_COLOR: Record<string, string> = {
   VWAP: "#80cbc4", RSI: "#ff9900", BOLL: "#ff9900", MACD: "#4fc3f7",
 };
 
+type ChartSettings = { range?: Range; interval?: string; chartType?: ChartType; indicators?: Indicator[] };
+
 export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   const symbol = useWidgetSymbol(widget);
-  const [range, setRange] = useState<Range>("6M");
-  const [chartType, setChartType] = useState<ChartType>("candles");
-  const [active, setActive] = useState<Set<Indicator>>(new Set(["SMA20"]));
+  const setWidgetSettings = useTerminal((s) => s.setWidgetSettings);
+  // Timeframe, chart type and indicators are saved with the widget, so they survive reloads.
+  const saved = (widget.settings ?? {}) as ChartSettings;
+  const range: Range = saved.range && RANGES.includes(saved.range) ? saved.range : "6M";
+  const interval = saved.interval ?? "AUTO";
+  const chartType: ChartType = saved.chartType ?? "candles";
+  const active = useMemo(() => new Set<Indicator>(saved.indicators ?? ["SMA20"]), [saved.indicators]);
+  const save = (patch: ChartSettings) => setWidgetSettings(widget.id, patch);
+  const setRange = (r: Range) => save({ range: r });
+  const setChartType = (t: ChartType) => save({ chartType: t });
+  const setInterval_ = (iv: string) => {
+    // Jump to the longest range that still works for the new bar size.
+    const ok = rangeAllowed(range, iv) ? range : [...RANGES].reverse().find((r) => rangeAllowed(r, iv)) ?? "1D";
+    save({ interval: iv, range: ok });
+  };
+  const [customDraft, setCustomDraft] = useState("");
+  const [customError, setCustomError] = useState(false);
+  const mins = intervalMinutes(interval);
+  const intraday = interval === "AUTO" ? range === "1D" || range === "5D" : mins !== null && mins < 1440;
   const [legend, setLegend] = useState<Candle | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
   const { data: candles, error } = useQuery({
-    queryKey: ["history", symbol, range],
-    queryFn: () => apiGet<Candle[]>(`/api/history/${encodeURIComponent(symbol)}?range=${range}`),
-    refetchInterval: range === "1D" ? 8_000 : 60_000,
+    queryKey: ["history", symbol, range, interval],
+    queryFn: () =>
+      apiGet<Candle[]>(
+        `/api/history/${encodeURIComponent(symbol)}?range=${range}` +
+          (interval === "AUTO" ? "" : `&interval=${encodeURIComponent(interval)}`)
+      ),
+    refetchInterval:
+      interval === "AUTO" ? (range === "1D" ? 8_000 : 60_000) : mins !== null && mins <= 5 ? 8_000 : mins !== null && mins < 1440 ? 30_000 : 60_000,
   });
 
   // Fast time -> candle lookup for the crosshair legend, independent of chart type.
@@ -134,7 +199,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
       layout: { background: { color: "#0a0a0a" }, textColor: "#808080", fontSize: 10, attributionLogo: false },
       grid: { vertLines: { color: "#1a1a1a" }, horzLines: { color: "#1a1a1a" } },
       crosshair: { mode: 0 },
-      timeScale: { borderColor: "#262626", timeVisible: range === "1D" || range === "5D" },
+      timeScale: { borderColor: "#262626", timeVisible: intraday, secondsVisible: mins !== null && mins < 1 },
       rightPriceScale: { borderColor: "#262626" },
       autoSize: true,
       // Mouse-wheel is left free for page scrolling — zoom via drag, pinch, or the range buttons instead.
@@ -222,24 +287,69 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, chartType, indicatorData, range, byTime]);
+  }, [candles, chartType, indicatorData, intraday, mins, byTime]);
 
-  const toggleIndicator = (ind: Indicator) =>
-    setActive((prev) => {
-      const next = new Set(prev);
-      if (next.has(ind)) next.delete(ind);
-      else next.add(ind);
-      return next;
-    });
+  const toggleIndicator = (ind: Indicator) => {
+    const next = new Set(active);
+    if (next.has(ind)) next.delete(ind);
+    else next.add(ind);
+    save({ indicators: INDICATORS.filter((i) => next.has(i)) });
+  };
+
+  const applyCustom = () => {
+    const iv = normalizeInterval(customDraft);
+    if (!iv) {
+      setCustomError(true);
+      return;
+    }
+    setCustomError(false);
+    setCustomDraft("");
+    setInterval_(iv);
+  };
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex gap-1 p-1 flex-wrap shrink-0">
-        {RANGES.map((r) => (
-          <button key={r} className={`term-btn ${range === r ? "active" : ""}`} onClick={() => setRange(r)}>
-            {r}
+        <span className="dim self-center text-[10px]" title="Timeframe: how long each candle lasts">TF</span>
+        {INTERVALS.map((iv) => (
+          <button
+            key={iv}
+            className={`term-btn ${interval === iv ? "active" : ""}`}
+            title={iv === "AUTO" ? "Bar size picked automatically for the range" : iv === "30s" ? "30-second bars (crypto only)" : `${iv} bars`}
+            onClick={() => setInterval_(iv)}
+          >
+            {iv}
           </button>
         ))}
+        {!(INTERVALS as readonly string[]).includes(interval) && <button className="term-btn active">{interval}</button>}
+        <input
+          value={customDraft}
+          onChange={(e) => {
+            setCustomDraft(e.target.value);
+            setCustomError(false);
+          }}
+          onKeyDown={(e) => e.key === "Enter" && applyCustom()}
+          onBlur={() => customDraft && applyCustom()}
+          placeholder="custom: 3m, 2h, 3D"
+          title="Any timeframe: a number plus s, m, h, D, W or M (e.g. 10s, 3m, 45m, 2h, 3D, 2W, 3M). Press Enter."
+          className={`w-[92px] bg-[var(--panel-2)] border px-1 text-[11px] ${customError ? "border-[var(--down)]" : "border-[var(--border)]"}`}
+        />
+        <span className="w-2" />
+        <span className="dim self-center text-[10px]" title="How much history to show">RANGE</span>
+        {RANGES.map((r) => {
+          const ok = rangeAllowed(r, interval);
+          return (
+            <button
+              key={r}
+              className={`term-btn ${range === r ? "active" : ""} ${ok ? "" : "opacity-30"}`}
+              disabled={!ok}
+              title={ok ? undefined : `Not available with ${interval} bars`}
+              onClick={() => setRange(r)}
+            >
+              {r}
+            </button>
+          );
+        })}
         <span className="w-2" />
         {CHART_TYPES.map((t) => (
           <button key={t} className={`term-btn ${chartType === t ? "active" : ""}`} onClick={() => setChartType(t)}>

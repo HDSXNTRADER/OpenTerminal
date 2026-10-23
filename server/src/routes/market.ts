@@ -14,6 +14,7 @@ import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
 import * as openbb from "../providers/openbb.js";
+import { isIntraday, isSubMinute, lastSession, parseInterval, rangeStart, resample, type Interval } from "../timeframe.js";
 
 export const marketRouter = Router();
 
@@ -244,9 +245,17 @@ marketRouter.get("/quotes", async (req, res) => {
 marketRouter.get("/history/:symbol", async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const rangeKey = String(req.query.range ?? "6M");
+  const rawInterval = req.query.interval === undefined ? "" : String(req.query.interval);
+  const iv = rawInterval && rawInterval !== "auto" ? parseInterval(rawInterval) : null;
+  if (rawInterval && rawInterval !== "auto" && !iv) {
+    res.status(400).json({ error: `invalid interval "${rawInterval.slice(0, 20)}" (examples: 1m, 15m, 4h, 1D, 1W, 1M)` });
+    return;
+  }
   try {
-    const data = await cached(`history:${symbol}:${rangeKey}`, HISTORY_TTL, () =>
-      binance.CRYPTO_SYMBOLS.has(symbol)
+    const data = await cached(`history:${symbol}:${rangeKey}:${iv?.key ?? "auto"}`, HISTORY_TTL, () =>
+      iv
+        ? historyAtInterval(symbol, rangeKey, iv)
+        : binance.CRYPTO_SYMBOLS.has(symbol)
         ? binance.history(symbol, rangeKey)
         : isVix(symbol)
         ? vixHistory(rangeKey)
@@ -263,6 +272,43 @@ marketRouter.get("/history/:symbol", async (req, res) => {
     fail(req, res, err);
   }
 });
+
+/**
+ * History at an explicit timeframe (1m, 15m, 4h, 1D, 2W, 1M, ...). Intraday
+ * bars only come from sources that have them (Binance, OpenBB, Yahoo); daily
+ * and longer can also be rebuilt from Nasdaq/Stooq daily bars.
+ */
+async function historyAtInterval(symbol: string, rangeKey: string, iv: Interval): Promise<yahoo.Candle[]> {
+  const now = Date.now();
+  if (binance.CRYPTO_SYMBOLS.has(symbol)) {
+    // Crypto trades 24/7, so "1D" really means the last 24 hours.
+    const start = rangeKey === "1D" ? now - 86_400_000 : rangeStart(rangeKey, now);
+    return binance.historyInterval(symbol, start, iv);
+  }
+  if (isSubMinute(iv)) throw new Error("second-level bars are only available for crypto");
+  const start = rangeStart(rangeKey, now);
+  const sinceStart = (cs: yahoo.Candle[]) => {
+    const kept = cs.filter((c) => c.time * 1000 >= start);
+    if (kept.length === 0) throw new Error("no bars in the requested range");
+    return kept;
+  };
+  if (isVix(symbol)) {
+    if (isIntraday(iv)) throw new Error("VIX is only available with daily bars or longer");
+    return resample(sinceStart(await vixHistory("MAX")), iv);
+  }
+  const chain: Array<[string, () => Promise<yahoo.Candle[]>]> = [
+    ...openbbFirst(() => openbb.historyInterval(symbol, start, iv, now)),
+    ["yahoo", () => yahoo.historyInterval(symbol, start, iv, now)],
+  ];
+  if (!isIntraday(iv)) {
+    chain.push(
+      ["nasdaq", async () => resample(sinceStart(await nasdaq.history(symbol, "MAX")), iv)],
+      ["stooq", async () => resample(sinceStart(await stooq.history(symbol)), iv)]
+    );
+  }
+  const candles = await withFallback(chain);
+  return rangeKey === "1D" && isIntraday(iv) ? lastSession(candles) : candles;
+}
 
 /** Prepends OpenBB to a fallback chain only when OPENBB_URL is configured. */
 function openbbFirst<T>(fn: () => Promise<T>): Array<[string, () => Promise<T>]> {

@@ -151,3 +151,52 @@ button.term-btn.active {
 .react-grid-item > .react-resizable-handle::after {
   border-color: var(--amber-dim) !important;
 }
+
+/* Resize from any edge or corner. Edge handles are invisible full-length
+   strips; corner markers only show while hovering a widget. */
+.react-grid-item > .react-resizable-handle {
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.react-grid-item:hover > .react-resizable-handle,
+.react-grid-item.resizing > .react-resizable-handle {
+  opacity: 1;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s {
+  left: 10px;
+  right: 10px;
+  width: auto;
+  height: 6px;
+  margin-left: 0;
+  transform: none;
+  background: none;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n { top: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s { bottom: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w {
+  top: 10px;
+  bottom: 10px;
+  height: auto;
+  width: 6px;
+  margin-top: 0;
+  transform: none;
+  background: none;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e { right: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w { left: 0; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w::after {
+  display: none;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n:hover,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s:hover,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e:hover,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w:hover {
+  background: var(--amber-dim);
+  opacity: 0.6;
+}

@@ -5,7 +5,7 @@ import GridLayout, { WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { normalizeSymbol } from "../lib/symbol";
-import { useTerminal, type WidgetInstance } from "../store/terminal";
+import { GRID, useTerminal, type WidgetInstance } from "../store/terminal";
 import QuoteWidget from "./widgets/QuoteWidget";
 import ChartWidget from "./widgets/ChartWidget";
 import WatchlistWidget from "./widgets/WatchlistWidget";
@@ -113,11 +113,16 @@ export default function Workspace() {
   return (
     <Grid
       className="layout"
-      layout={layout}
-      cols={12}
-      rowHeight={30}
-      margin={[4, 4]}
+      layout={layout.map((l) => ({ ...l, minW: 4, minH: 4 }))}
+      cols={GRID.cols}
+      rowHeight={GRID.rowHeight}
+      margin={[GRID.margin, GRID.margin]}
+      // Free placement: widgets stay exactly where they are dropped instead of
+      // floating up, and can be resized from any edge or corner.
+      compactType={null}
+      resizeHandles={["s", "e", "w", "n", "se", "sw", "ne", "nw"]}
       draggableHandle=".panel-title"
+      draggableCancel="button, input"
       onLayoutChange={(l) => setLayout(l.map(({ i, x, y, w, h }) => ({ i, x, y, w, h })))}
     >
       {widgets.map((w) => (

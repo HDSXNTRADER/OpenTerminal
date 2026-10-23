@@ -1,4 +1,5 @@
 import type { Candle, Quote } from "./yahoo.js";
+import { intradayLookbackDays, lastSession, pickBase, resample, type Interval } from "../timeframe.js";
 
 // OpenBB (Open Data Platform, https://github.com/OpenBB-finance/OpenBB) runs
 // as a separate Python service (`pip install openbb && openbb-api`) exposing a
@@ -132,7 +133,32 @@ export function rangeParams(rangeKey: string, now = Date.now()): { start_date: s
 
 export async function history(symbol: string, rangeKey: string): Promise<Candle[]> {
   const rows = await obb("equity/price/historical", { symbol, ...rangeParams(rangeKey) });
-  let candles: Candle[] = [];
+  let candles = toCandles(rows);
+  if (rangeKey === "1D") candles = lastSession(candles);
+  if (candles.length === 0) throw new Error("openbb: empty history for " + symbol);
+  return candles;
+}
+
+/** Native bar sizes of the yfinance provider behind OpenBB, plus how far back intraday bars go. */
+const OBB_NATIVE = {
+  minutes: [[1, "1m"], [2, "2m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"]] as Array<[number, string]>,
+  day: "1d",
+  week: "1W",
+  month: "1M",
+};
+
+/** History at any timeframe: fetches the closest native bar size and resamples. */
+export async function historyInterval(symbol: string, startMs: number, iv: Interval, now = Date.now()): Promise<Candle[]> {
+  const { base, baseMinutes } = pickBase(iv, OBB_NATIVE);
+  const start = Math.max(startMs, now - intradayLookbackDays(baseMinutes) * DAY);
+  const rows = await obb("equity/price/historical", { symbol, start_date: isoDate(start), interval: base });
+  const candles = resample(toCandles(rows), iv);
+  if (candles.length === 0) throw new Error("openbb: empty history for " + symbol);
+  return candles;
+}
+
+function toCandles(rows: any[]): Candle[] {
+  const candles: Candle[] = [];
   for (const r of rows) {
     // Daily bars come back as "YYYY-MM-DD", intraday as a full ISO timestamp with offset.
     const raw = String(r.date ?? "");
@@ -148,14 +174,7 @@ export async function history(symbol: string, rangeKey: string): Promise<Candle[
       volume: n(r.volume) ?? 0,
     });
   }
-  candles.sort((a, b) => a.time - b.time);
-  if (rangeKey === "1D" && candles.length > 0) {
-    // Keep only the most recent session.
-    const lastDay = new Date(candles[candles.length - 1].time * 1000).toISOString().slice(0, 10);
-    candles = candles.filter((c) => new Date(c.time * 1000).toISOString().slice(0, 10) === lastDay);
-  }
-  if (candles.length === 0) throw new Error("openbb: empty history for " + symbol);
-  return candles;
+  return candles.sort((a, b) => a.time - b.time);
 }
 
 // ---- fundamentals (key metrics + company profile) ----
