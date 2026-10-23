@@ -8,7 +8,8 @@ ARG OPENBB_VERSION=5.0.0
 ARG OPENBB_EXTRAS=""
 
 ENV PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
-RUN pip install "openbb==${OPENBB_VERSION}" ${OPENBB_EXTRAS}
+# openbb 5 no longer bundles the equity router or the yfinance vendor.
+RUN pip install "openbb==${OPENBB_VERSION}" openbb-equity==2.0.0 openbb-yfinance==2.0.0 ${OPENBB_EXTRAS}
 
 # Vendor API keys go in /root/.openbb_platform/user_settings.json (mounted by
 # docker-compose), or as OPENBB_* env vars documented by OpenBB.

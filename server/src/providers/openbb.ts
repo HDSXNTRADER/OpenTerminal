@@ -32,12 +32,12 @@ function pct(v: unknown): number | null {
 }
 
 /**
- * GET an OpenBB v5 route (provider-namespaced, e.g. /api/v1/yfinance/equity/price/quote)
+ * GET an OpenBB v5 route (e.g. /api/v1/equity/price/quote?provider=yfinance; needs openbb-equity)
  * and unwrap its OBBject envelope to the `results` array.
  */
 async function obb(route: string, params: Record<string, string | number>): Promise<any[]> {
   if (!enabled()) throw new Error("openbb: OPENBB_URL not configured");
-  const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
+  const qs = new URLSearchParams([["provider", PROVIDER], ...Object.entries(params).map(([k, v]) => [k, String(v)])]);
   const headers: Record<string, string> = { Accept: "application/json" };
   // openbb-api supports HTTP basic auth (OPENBB_API_USERNAME/PASSWORD on its side).
   const user = process.env.OPENBB_USERNAME;
@@ -45,7 +45,7 @@ async function obb(route: string, params: Record<string, string | number>): Prom
     const pass = process.env.OPENBB_PASSWORD ?? "";
     headers.Authorization = "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
   }
-  const res = await fetch(`${BASE}/api/v1/${PROVIDER}/${route}?${qs}`, {
+  const res = await fetch(`${BASE}/api/v1/${route}?${qs}`, {
     headers,
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });

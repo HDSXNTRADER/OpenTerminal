@@ -147,7 +147,7 @@ Two optional knobs for the assistant, both standard for the Anthropic SDK:
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install openbb
+pip install openbb openbb-equity openbb-yfinance   # openbb 5 ships these separately
 openbb-api                     # serves http://127.0.0.1:6900
 
 export OPENBB_URL=http://127.0.0.1:6900

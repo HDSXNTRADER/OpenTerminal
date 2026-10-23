@@ -62,7 +62,7 @@ describe("openbb provider", () => {
     });
     const rows = await obb.quotes(["AAPL", "NOPE"]);
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "http://openbb:6900/api/v1/yfinance/equity/price/quote?symbol=AAPL%2CNOPE"
+      "http://openbb:6900/api/v1/equity/price/quote?provider=yfinance&symbol=AAPL%2CNOPE"
     );
     expect(rows).toHaveLength(1); // the priceless row is dropped so the fallback chain picks it up
     expect(rows[0]).toMatchObject({
@@ -86,7 +86,7 @@ describe("openbb provider", () => {
     const fetchMock = mockFetch({ json: { results: [{ symbol: "MSFT", last_price: 1 }] } });
     await obb.quotes(["MSFT"]);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/api/v1/fmp/equity/price/quote");
+    expect(String(url)).toContain("/api/v1/equity/price/quote?provider=fmp");
     expect(init.headers.Authorization).toBe("Basic " + Buffer.from("u:p").toString("base64"));
   });
 
