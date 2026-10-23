@@ -9,8 +9,6 @@ import { t } from "../../lib/i18n";
 const CHANNELS = [
   { id: "bloomberg", label: "Bloomberg TV", url: "https://liveprodusphoenixeast.global.ssl.fastly.net/USPhx-HD/Channel-TX-USPhx-AWS-virginia-1/Source-USPhx-16k-1-s6lk2-BP-07-02-81ykIWnsMsg_live.m3u8" },
   { id: "yahoo", label: "Yahoo Finance", url: "https://d1ewctnvcwvvvu.cloudfront.net/playlist.m3u8" },
-  { id: "cnbc", label: "CNBC", url: "https://gpuserver3.tier1streams.com/CNBC/index.m3u8" },
-  { id: "cheddar", label: "Cheddar Business", url: "https://gpuserver3.tier1streams.com/CHEDDAR_BUSINESS/index.m3u8" },
   { id: "ndtv", label: "NDTV Profit", url: "https://ndtvprofit.akamaized.net/hls/live/2107404/ndtvprofit/master_1.m3u8" },
 ] as const;
 
@@ -25,16 +23,43 @@ export default function TvWidget() {
     setError(null);
 
     if (Hls.isSupported()) {
-      const hls = new Hls();
+      // Stay a few segments behind the live edge so brief CDN hiccups don't stall playback.
+      const hls = new Hls({ liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 10, maxBufferLength: 30 });
+      let failures = 0;
       hls.loadSource(channel.url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().catch(() => {});
       });
-      hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (data.fatal) setError(t("Stream unavailable right now ({d}). Try another channel.", { d: data.details }));
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        failures = 0;
+        setError(null);
       });
-      return () => hls.destroy();
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (!data.fatal) return;
+        if (++failures > 5) {
+          setError(t("Stream unavailable right now ({d}). Try another channel.", { d: data.details }));
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+        } else {
+          setTimeout(() => hls.startLoad(), 2000);
+        }
+      });
+      // Watchdog: if playback stops advancing, jump back to the live edge and reload.
+      let lastTime = -1;
+      const watchdog = setInterval(() => {
+        if (!video.paused && video.readyState !== 0 && video.currentTime === lastTime) {
+          const live = hls.liveSyncPosition;
+          if (live !== null && live !== undefined && isFinite(live)) video.currentTime = live;
+          hls.startLoad();
+          video.play().catch(() => {});
+        }
+        lastTime = video.currentTime;
+      }, 8000);
+      return () => {
+        clearInterval(watchdog);
+        hls.destroy();
+      };
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = channel.url;
       video.play().catch(() => {});

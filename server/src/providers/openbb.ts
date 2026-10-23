@@ -13,6 +13,13 @@ import { intradayLookbackDays, lastSession, pickBase, resample, type Interval } 
 const BASE = process.env.OPENBB_URL?.trim().replace(/\/+$/, "") ?? "";
 const PROVIDER = process.env.OPENBB_PROVIDER?.trim() || "yfinance";
 const TIMEOUT_MS = 15_000;
+// Fundamentals hit several Yahoo endpoints behind OpenBB and can take a while.
+const SLOW_TIMEOUT_MS = 60_000;
+// openbb-api answers roughly one call at a time, so the widgets' polling used
+// to pile up requests until everything timed out. Cap what we keep in flight
+// and let the free providers answer the overflow instead.
+const MAX_IN_FLIGHT = 4;
+let inFlight = 0;
 
 export function enabled(): boolean {
   return BASE.length > 0;
@@ -36,8 +43,18 @@ function pct(v: unknown): number | null {
  * GET an OpenBB v5 route (e.g. /api/v1/equity/price/quote?provider=yfinance; needs openbb-equity)
  * and unwrap its OBBject envelope to the `results` array.
  */
-async function obb(route: string, params: Record<string, string | number>): Promise<any[]> {
+async function obb(route: string, params: Record<string, string | number>, slow = false): Promise<any[]> {
   if (!enabled()) throw new Error("openbb: OPENBB_URL not configured");
+  if (!slow && inFlight >= MAX_IN_FLIGHT) throw new Error("openbb: busy");
+  inFlight++;
+  try {
+    return await obbFetch(route, params, slow ? SLOW_TIMEOUT_MS : TIMEOUT_MS);
+  } finally {
+    inFlight--;
+  }
+}
+
+async function obbFetch(route: string, params: Record<string, string | number>, timeoutMs: number): Promise<any[]> {
   const qs = new URLSearchParams([["provider", PROVIDER], ...Object.entries(params).map(([k, v]) => [k, String(v)])]);
   const headers: Record<string, string> = { Accept: "application/json" };
   // openbb-api supports HTTP basic auth (OPENBB_API_USERNAME/PASSWORD on its side).
@@ -48,7 +65,7 @@ async function obb(route: string, params: Record<string, string | number>): Prom
   }
   const res = await fetch(`${BASE}/api/v1/${route}?${qs}`, {
     headers,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const body: any = await res.json().catch(() => null);
@@ -59,6 +76,31 @@ async function obb(route: string, params: Record<string, string | number>): Prom
   const results = Array.isArray(json?.results) ? json.results : json?.results ? [json.results] : [];
   if (results.length === 0) throw new Error(`openbb: no results for ${route}`);
   return results;
+}
+
+const NY_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+/**
+ * Parse an OpenBB timestamp to epoch ms. yfinance returns exchange-local New
+ * York wall time with no offset, which Date.parse would read as machine-local
+ * time, so offset-less stamps are interpreted in America/New_York (DST-aware).
+ */
+export function parseTimestamp(raw: string): number {
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(raw)) return Date.parse(raw);
+  const asUtc = Date.parse(raw + "Z");
+  if (!isFinite(asUtc)) return NaN;
+  const p = Object.fromEntries(NY_PARTS.formatToParts(new Date(asUtc)).map((x) => [x.type, x.value]));
+  const nyAsUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return asUtc - (nyAsUtc - asUtc);
 }
 
 // ---- quotes ----
@@ -94,7 +136,7 @@ function toQuote(r: any): Quote {
     currency: r.currency ?? null,
     exchange: r.exchange ?? null,
     marketState: null,
-    time: r.last_timestamp ? Math.floor(Date.parse(r.last_timestamp) / 1000) || null : null,
+    time: r.last_timestamp ? Math.floor(parseTimestamp(String(r.last_timestamp)) / 1000) || null : null,
     source: `openbb:${PROVIDER}`,
   };
 }
@@ -160,9 +202,9 @@ export async function historyInterval(symbol: string, startMs: number, iv: Inter
 function toCandles(rows: any[]): Candle[] {
   const candles: Candle[] = [];
   for (const r of rows) {
-    // Daily bars come back as "YYYY-MM-DD", intraday as a full ISO timestamp with offset.
+    // Daily bars come back as "YYYY-MM-DD", intraday as an ISO timestamp (New York time if offset-less).
     const raw = String(r.date ?? "");
-    const t = Date.parse(raw.length === 10 ? raw + "T00:00:00Z" : raw) / 1000;
+    const t = (raw.length === 10 ? Date.parse(raw + "T00:00:00Z") : parseTimestamp(raw)) / 1000;
     const close = n(r.close);
     if (!isFinite(t) || close === null) continue;
     candles.push({
@@ -237,8 +279,8 @@ export async function fundamentals(symbol: string): Promise<Fundamentals> {
   // Metrics are the core; the profile only adds descriptive fields, so its
   // failure (some vendors don't serve one) shouldn't sink the whole panel.
   const [metricsRows, profileRows] = await Promise.all([
-    obb("equity/fundamental/metrics", { symbol }),
-    obb("equity/profile", { symbol }).catch(() => [] as any[]),
+    obb("equity/fundamental/metrics", { symbol }, true),
+    obb("equity/profile", { symbol }, true).catch(() => [] as any[]),
   ]);
   const m = metricsRows[0] ?? {};
   const p = profileRows[0] ?? {};
