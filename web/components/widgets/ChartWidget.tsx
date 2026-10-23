@@ -16,6 +16,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
+import { exchangeTimeOptions } from "../../lib/chartTime";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
 import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 import { locale, t } from "../../lib/i18n";
@@ -228,12 +229,18 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     if (!el || !candles || candles.length === 0) return;
 
     const colors = chartColors();
+    const timeOpts = exchangeTimeOptions(locale(), intraday);
     const chart = createChart(el, {
       layout: { background: { color: colors.background }, textColor: colors.text, fontSize: 10, attributionLogo: false },
-      localization: { locale: locale() },
+      localization: timeOpts.localization,
       grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       crosshair: { mode: 0 },
-      timeScale: { borderColor: colors.border, timeVisible: intraday, secondsVisible: mins !== null && mins < 1 },
+      timeScale: {
+        borderColor: colors.border,
+        timeVisible: intraday,
+        secondsVisible: mins !== null && mins < 1,
+        tickMarkFormatter: timeOpts.tickMarkFormatter,
+      },
       // Comparing assets: every series is shown as % change from the first visible bar.
       rightPriceScale: { borderColor: colors.border, mode: compareSeries.length > 0 ? PriceScaleMode.Percentage : PriceScaleMode.Normal },
       autoSize: true,

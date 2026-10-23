@@ -229,6 +229,12 @@ export default function Workspace() {
   const setMaximized = useTerminal((s) => s.setMaximized);
   const maxWidget = widgets.find((w) => w.id === maximized);
 
+  // Deep link: /?symbol=NQ points every linked widget at that symbol (aliases like US100 work too).
+  useEffect(() => {
+    const sym = new URLSearchParams(window.location.search).get("symbol");
+    if (sym) useTerminal.getState().setActiveSymbol(sym);
+  }, []);
+
   useEffect(() => {
     if (!maxWidget) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMaximized(null);
