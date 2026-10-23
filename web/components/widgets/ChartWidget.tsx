@@ -10,60 +10,23 @@ import {
   AreaSeries,
   BarSeries,
   type IChartApi,
+  type ISeriesApi,
+  type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
 import { useTerminal, useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 import { locale, t } from "../../lib/i18n";
+import { INTERVALS, RANGES, intervalMinutes, normalizeInterval, rangeAllowed, type Range } from "../../lib/timeframes";
+import DrawingLayer, { DRAW_TOOLS, type ChartApi, type DrawTool } from "./ChartDrawings";
 
-const RANGES = ["1D", "5D", "1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"] as const;
-// "AUTO" lets the server pick a bar size that suits the range (the original behaviour).
-const INTERVALS = ["AUTO", "30s", "1m", "5m", "15m", "30m", "1h", "4h", "1D", "1W", "1M"] as const;
-const RANGE_DAYS: Record<Range, number> = {
-  "1D": 1, "5D": 5, "1M": 31, "3M": 92, "6M": 183, YTD: 366, "1Y": 366, "5Y": 1830, MAX: 20_000,
-};
-const UNIT_MINUTES: Record<string, number> = { s: 1 / 60, m: 1, h: 60, D: 1440, W: 10_080, M: 43_200 };
+// The chart the user last pointed at or clicked receives typed timeframe shortcuts.
+let keyboardChart: string | null = null;
 
-/** Bar length in minutes for "30s", "15m", "4h", "1D", "2W", "1M"... or null if not a valid timeframe. */
-function intervalMinutes(iv: string): number | null {
-  const m = /^(\d{1,4})(s|m|h|D|W|M)$/.exec(iv);
-  return m && Number(m[1]) > 0 ? Number(m[1]) * UNIT_MINUTES[m[2]] : null;
-}
-
-/** Normalise user input like "45 min", "2H", "3d" to the server's format. */
-function normalizeInterval(raw: string): string | null {
-  const t = raw.trim();
-  // Capital M is months (like TradingView); lowercase m is minutes.
-  if (/^\d{1,4}M$/.test(t)) return intervalMinutes(t) ? t : null;
-  const m = /^(\d{1,4})\s*(s|sec|m|min|h|d|w|mo)$/i.exec(t);
-  if (!m) return null;
-  const u = m[2].toLowerCase();
-  const unit = u.startsWith("s") ? "s" : u === "mo" ? "M" : u.startsWith("m") ? "m" : u === "h" ? "h" : u === "d" ? "D" : "W";
-  const iv = `${Number(m[1])}${unit}`;
-  return intervalMinutes(iv) ? iv : null;
-}
-
-/**
- * Whether a range makes sense for a bar size: free data sources only keep
- * fine bars for a short window (1m ~7 days, under 1h ~60 days, hourly ~2
- * years, seconds a few hours), and a range should hold at least two bars.
- */
-function rangeAllowed(range: Range, interval: string): boolean {
-  if (interval === "AUTO") return true;
-  const mins = intervalMinutes(interval);
-  if (!mins) return true;
-  const days = RANGE_DAYS[range];
-  if (mins < 1 && days > 1) return false;
-  if (mins === 1 && days > 5) return false;
-  if (mins < 60 && days > 31) return false;
-  if (mins < 1440 && days > 366) return false;
-  return (days * 1440) / mins >= 2;
-}
 const CHART_TYPES = ["candles", "bars", "line", "area"] as const;
 const INDICATORS = ["SMA20", "SMA50", "SMA200", "EMA20", "VWAP", "BOLL", "RSI", "MACD"] as const;
 
-type Range = (typeof RANGES)[number];
 type ChartType = (typeof CHART_TYPES)[number];
 type Indicator = (typeof INDICATORS)[number];
 
@@ -101,6 +64,49 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   const [legend, setLegend] = useState<Candle | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [api, setApi] = useState<ChartApi | null>(null);
+  const [tool, setTool] = useState<DrawTool>(null);
+  const hasDrawings = useTerminal((s) => (s.drawings[symbol]?.length ?? 0) > 0);
+  const clearDrawings = useTerminal((s) => s.clearDrawings);
+  const [typed, setTyped] = useState("");
+
+  // TradingView-style shortcuts: point at a chart and type "5" Enter (5m), "1h", "4h", "1D", "1W"...
+  // Esc cancels typing or the active drawing tool.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (keyboardChart !== widget.id || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (e.key === "Escape") {
+        setTyped("");
+        setTool(null);
+        return;
+      }
+      if (e.key === "Enter" && typed) {
+        e.preventDefault();
+        const iv = normalizeInterval(/^\d+$/.test(typed) ? `${typed}m` : typed);
+        if (iv) setInterval_(iv);
+        setTyped("");
+        return;
+      }
+      if (e.key === "Backspace" && typed) {
+        setTyped((v) => v.slice(0, -1));
+        return;
+      }
+      if (/^[0-9]$/.test(e.key) || (typed && /^[smhdwMSHDW]$/.test(e.key) && /^\d+$/.test(typed))) {
+        e.preventDefault();
+        setTyped((v) => (v + e.key).slice(0, 6));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (!typed) return;
+    const timer = setTimeout(() => setTyped(""), 4000);
+    return () => clearTimeout(timer);
+  }, [typed]);
 
   const { data: candles, error } = useQuery({
     queryKey: ["history", symbol, range, interval],
@@ -213,25 +219,22 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     const upColor = "#00c853";
     const downColor = "#ff3d3d";
 
+    let main: ISeriesApi<SeriesType>;
     if (chartType === "candles") {
-      chart
-        .addSeries(CandlestickSeries, {
-          upColor, downColor, borderUpColor: upColor, borderDownColor: downColor,
-          wickUpColor: upColor, wickDownColor: downColor,
-        })
-        .setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
+      main = chart.addSeries(CandlestickSeries, {
+        upColor, downColor, borderUpColor: upColor, borderDownColor: downColor,
+        wickUpColor: upColor, wickDownColor: downColor,
+      });
+      main.setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
     } else if (chartType === "bars") {
-      chart
-        .addSeries(BarSeries, { upColor, downColor })
-        .setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
+      main = chart.addSeries(BarSeries, { upColor, downColor });
+      main.setData(candles.map((c) => ({ time: ts(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
     } else if (chartType === "line") {
-      chart
-        .addSeries(LineSeries, { color: "#ff9900", lineWidth: 1 })
-        .setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
+      main = chart.addSeries(LineSeries, { color: "#ff9900", lineWidth: 1 });
+      main.setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
     } else {
-      chart
-        .addSeries(AreaSeries, { lineColor: "#ff9900", topColor: "rgba(255,153,0,0.25)", bottomColor: "rgba(255,153,0,0)" })
-        .setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
+      main = chart.addSeries(AreaSeries, { lineColor: "#ff9900", topColor: "rgba(255,153,0,0.25)", bottomColor: "rgba(255,153,0,0)" });
+      main.setData(candles.map((c) => ({ time: ts(c.time), value: c.close })));
     }
 
     // volume histogram on its own scale at the bottom of the main pane
@@ -285,7 +288,9 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
     });
 
     chart.timeScale().fitContent();
+    setApi({ chart, series: main });
     return () => {
+      setApi(null);
       chart.remove();
       chartRef.current = null;
     };
@@ -310,7 +315,11 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full"
+      onMouseEnter={() => (keyboardChart = widget.id)}
+      onMouseDown={() => (keyboardChart = widget.id)}
+    >
       <div className="flex gap-1 p-1 flex-wrap shrink-0">
         <span className="dim self-center text-[10px]" title={t("Timeframe: how long each candle lasts")}>TF</span>
         {INTERVALS.map((iv) => (
@@ -364,6 +373,27 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
             {ind}
           </button>
         ))}
+        <span className="w-2" />
+        {DRAW_TOOLS.map((dt) => (
+          <button
+            key={dt.id}
+            className={`term-btn ${tool === dt.id ? "active" : ""}`}
+            title={t(dt.label)}
+            onClick={() => setTool(tool === dt.id ? null : dt.id)}
+          >
+            {dt.icon}
+          </button>
+        ))}
+        {(
+          <button
+            className={`term-btn ${hasDrawings ? "" : "opacity-30"}`}
+            disabled={!hasDrawings}
+            title={t("Delete all drawings on {s}", { s: symbol })}
+            onClick={() => window.confirm(t("Delete all drawings on {s}", { s: symbol }) + "?") && clearDrawings(symbol)}
+          >
+            🗑
+          </button>
+        )}
       </div>
       {error && <div className="p-2 down">{t("Error")}: {t((error as Error).message)}</div>}
       <div className="relative flex-1 min-h-0">
@@ -387,7 +417,14 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
             )}
           </div>
         )}
-        <div ref={containerRef} className="w-full h-full" />
+        <div ref={containerRef} className={`w-full h-full ${tool ? "cursor-crosshair" : ""}`} />
+        {candles && <DrawingLayer api={api} candles={candles} symbol={symbol} tool={tool} onDone={() => setTool(null)} />}
+        {typed && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-[var(--panel-2)] border border-[var(--amber)] px-4 py-2 text-center pointer-events-none">
+            <div className="amber text-2xl font-bold">{typed}</div>
+            <div className="dim text-[10px]">{t("Enter = change timeframe · Esc = cancel")}</div>
+          </div>
+        )}
       </div>
     </div>
   );

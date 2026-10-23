@@ -22,7 +22,9 @@ export type WidgetType =
   | "insider"
   | "fundamentals"
   | "tv"
-  | "recap";
+  | "recap"
+  | "alerts"
+  | "multichart";
 
 export type WidgetInstance = {
   id: string;
@@ -34,6 +36,25 @@ export type WidgetInstance = {
 };
 
 export type LayoutItem = { i: string; x: number; y: number; w: number; h: number };
+
+/** A saved page of widgets ("Day trade", "Swing"...). The active one lives in `widgets`/`layout`. */
+export type Workspace = { id: string; name: string; widgets: WidgetInstance[]; layout: LayoutItem[] };
+
+/** A chart drawing anchored to bar times and prices, so it survives timeframe changes. */
+export type DrawingPoint = { time: number; price: number };
+export type Drawing =
+  | { id: string; kind: "trend"; a: DrawingPoint; b: DrawingPoint }
+  | { id: string; kind: "fib"; a: DrawingPoint; b: DrawingPoint }
+  | { id: string; kind: "hline"; price: number };
+
+export type PriceAlert = {
+  id: string;
+  symbol: string;
+  price: number;
+  /** Fires when the price goes above / below `price`. */
+  direction: "above" | "below";
+  triggeredAt: number | null;
+};
 
 type TerminalState = {
   activeSymbol: string;
@@ -55,7 +76,26 @@ type TerminalState = {
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
   resetWorkspace: () => void;
+  /** Widget shown full screen, or null. Not saved. */
+  maximized: string | null;
+  setMaximized: (id: string | null) => void;
+  workspaces: Workspace[];
+  activeWorkspace: string;
+  addWorkspace: (name: string) => void;
+  switchWorkspace: (id: string) => void;
+  renameWorkspace: (id: string, name: string) => void;
+  deleteWorkspace: (id: string) => void;
+  drawings: Record<string, Drawing[]>;
+  addDrawing: (symbol: string, d: Drawing) => void;
+  removeDrawing: (symbol: string, id: string) => void;
+  clearDrawings: (symbol: string) => void;
+  alerts: PriceAlert[];
+  addAlert: (symbol: string, price: number, direction: PriceAlert["direction"]) => void;
+  removeAlert: (id: string) => void;
+  triggerAlert: (id: string) => void;
 };
+
+const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: "w-chart", type: "chart", linked: true },
@@ -108,11 +148,13 @@ const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   fundamentals: { w: 5, h: 13 },
   tv: { w: 6, h: 11 },
   recap: { w: 5, h: 12 },
+  alerts: { w: 4, h: 8 },
+  multichart: { w: 12, h: 16 },
 };
 
 export const useTerminal = create<TerminalState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       activeSymbol: "AAPL",
       lang: "pt",
       setLang: (lang) => set({ lang }),
@@ -127,7 +169,7 @@ export const useTerminal = create<TerminalState>()(
       setCommandOpen: (open) => set({ commandOpen: open }),
       addWidget: (type, symbol) =>
         set((st) => {
-          const id = `w-${type}-${Date.now()}`;
+          const id = uid(`w-${type}`);
           const { w, h } = fromV0({ x: 0, y: 0, ...SIZE_BY_TYPE[type] });
           const maxY = st.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
           return {
@@ -139,6 +181,7 @@ export const useTerminal = create<TerminalState>()(
         set((st) => ({
           widgets: st.widgets.filter((w) => w.id !== id),
           layout: st.layout.filter((l) => l.i !== id),
+          maximized: st.maximized === id ? null : st.maximized,
         })),
       setWidgetSymbol: (id, symbol) => {
         const sym = normalizeSymbol(symbol);
@@ -164,10 +207,67 @@ export const useTerminal = create<TerminalState>()(
         }));
       },
       removeFromWatchlist: (s) => set((st) => ({ watchlist: st.watchlist.filter((x) => x !== s) })),
-      resetWorkspace: () => set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT }),
+      resetWorkspace: () => set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT, maximized: null }),
+      maximized: null,
+      setMaximized: (id) => set({ maximized: id }),
+      workspaces: [{ id: "ws-main", name: "Principal", widgets: [], layout: [] }],
+      activeWorkspace: "ws-main",
+      addWorkspace: (name) => {
+        const id = uid("ws");
+        const st = get();
+        set({
+          workspaces: [
+            ...st.workspaces.map((w) => (w.id === st.activeWorkspace ? { ...w, widgets: st.widgets, layout: st.layout } : w)),
+            { id, name, widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT },
+          ],
+          activeWorkspace: id,
+          widgets: DEFAULT_WIDGETS,
+          layout: DEFAULT_LAYOUT,
+          maximized: null,
+        });
+      },
+      switchWorkspace: (id) => {
+        const st = get();
+        const target = st.workspaces.find((w) => w.id === id);
+        if (!target || id === st.activeWorkspace) return;
+        set({
+          workspaces: st.workspaces.map((w) => (w.id === st.activeWorkspace ? { ...w, widgets: st.widgets, layout: st.layout } : w)),
+          activeWorkspace: id,
+          widgets: target.widgets,
+          layout: target.layout,
+          maximized: null,
+        });
+      },
+      renameWorkspace: (id, name) =>
+        set((st) => ({ workspaces: st.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })),
+      deleteWorkspace: (id) => {
+        const st = get();
+        if (st.workspaces.length <= 1) return;
+        const rest = st.workspaces.filter((w) => w.id !== id);
+        if (id !== st.activeWorkspace) return set({ workspaces: rest });
+        set({ workspaces: rest, activeWorkspace: rest[0].id, widgets: rest[0].widgets, layout: rest[0].layout, maximized: null });
+      },
+      drawings: {},
+      addDrawing: (symbol, d) =>
+        set((st) => ({ drawings: { ...st.drawings, [symbol]: [...(st.drawings[symbol] ?? []), d] } })),
+      removeDrawing: (symbol, id) =>
+        set((st) => ({ drawings: { ...st.drawings, [symbol]: (st.drawings[symbol] ?? []).filter((d) => d.id !== id) } })),
+      clearDrawings: (symbol) =>
+        set((st) => {
+          const { [symbol]: _gone, ...rest } = st.drawings;
+          return { drawings: rest };
+        }),
+      alerts: [],
+      addAlert: (symbol, price, direction) =>
+        set((st) => ({ alerts: [...st.alerts, { id: uid("al"), symbol, price, direction, triggeredAt: null }] })),
+      removeAlert: (id) => set((st) => ({ alerts: st.alerts.filter((a) => a.id !== id) })),
+      triggerAlert: (id) =>
+        set((st) => ({ alerts: st.alerts.map((a) => (a.id === id ? { ...a, triggeredAt: Date.now() } : a)) })),
     }),
     {
       name: "openterminal-workspace",
+      // Transient UI state stays out of storage.
+      partialize: ({ commandOpen: _c, maximized: _m, ...rest }) => rest,
       version: 1,
       migrate: (persisted, version) => {
         const st = persisted as Partial<TerminalState>;

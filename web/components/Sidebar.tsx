@@ -5,6 +5,7 @@ import { t } from "../lib/i18n";
 
 const ITEMS: Array<{ type: WidgetType; label: string; key: string }> = [
   { type: "chart", label: "CHART", key: "⌥1" },
+  { type: "multichart", label: "MULTI-TIMEFRAME", key: "" },
   { type: "quote", label: "QUOTE", key: "⌥2" },
   { type: "news", label: "NEWS", key: "⌥3" },
   { type: "screener", label: "SCREENER", key: "⌥4" },
@@ -20,6 +21,7 @@ const ITEMS: Array<{ type: WidgetType; label: string; key: string }> = [
   { type: "fundamentals", label: "FUNDAMENTALS", key: "" },
   { type: "tv", label: "LIVE TV", key: "" },
   { type: "recap", label: "MARKET RECAP", key: "" },
+  { type: "alerts", label: "PRICE ALERTS", key: "" },
 ];
 
 export default function Sidebar() {

@@ -22,6 +22,8 @@ import InsiderWidget from "./widgets/InsiderWidget";
 import FundamentalsWidget from "./widgets/FundamentalsWidget";
 import TvWidget from "./widgets/TvWidget";
 import RecapWidget from "./widgets/RecapWidget";
+import AlertsWidget from "./widgets/AlertsWidget";
+import MultiChartWidget from "./widgets/MultiChartWidget";
 import WidgetErrorBoundary from "./WidgetErrorBoundary";
 import { t } from "../lib/i18n";
 
@@ -45,6 +47,8 @@ function WidgetBody({ widget }: { widget: WidgetInstance }) {
     case "fundamentals": return <FundamentalsWidget widget={widget} />;
     case "tv": return <TvWidget />;
     case "recap": return <RecapWidget />;
+    case "alerts": return <AlertsWidget />;
+    case "multichart": return <MultiChartWidget widget={widget} />;
   }
 }
 
@@ -99,17 +103,89 @@ const TITLES: Record<string, string> = {
   heatmap: "Heatmap", screener: "Screener", crypto: "Crypto",
   macro: "Macro / Indexes", options: "Option Chain", portfolio: "Portfolio", ai: "AI Assistant",
   calendar: "Calendar", insider: "Insider Transactions", fundamentals: "Fundamentals (OpenBB)", tv: "Live TV", recap: "Market Recap",
+  alerts: "Price Alerts", multichart: "Multi-Timeframe",
 };
+
+const SYMBOL_AWARE = new Set(["quote", "chart", "news", "options", "insider", "fundamentals", "multichart"]);
+
+function Panel({ widget: w }: { widget: WidgetInstance }) {
+  const removeWidget = useTerminal((s) => s.removeWidget);
+  const toggleLinked = useTerminal((s) => s.toggleLinked);
+  const activeSymbol = useTerminal((s) => s.activeSymbol);
+  const maximized = useTerminal((s) => s.maximized);
+  const setMaximized = useTerminal((s) => s.setMaximized);
+  const isMax = maximized === w.id;
+  const toggleMax = () => setMaximized(isMax ? null : w.id);
+
+  return (
+    <div className="terminal-panel">
+      {/* The grid swallows mouseup/click on the drag handle, so detect the double-click on mousedown. */}
+      <div className="panel-title" onMouseDown={(e) => e.detail === 2 && toggleMax()}>
+        <span>
+          {t(TITLES[w.type])}
+          {SYMBOL_AWARE.has(w.type) && <SymbolTag widget={w} activeSymbol={activeSymbol} />}
+        </span>
+        <span className="flex gap-2 items-center">
+          {SYMBOL_AWARE.has(w.type) && (
+            <button
+              title={t(w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)")}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => toggleLinked(w.id)}
+              className={w.linked ? "text-[var(--amber)]" : "dim"}
+            >
+              ⛓
+            </button>
+          )}
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={toggleMax}
+            title={t(isMax ? "Restore (Esc)" : "Maximize (or double-click the title)")}
+            className={isMax ? "text-[var(--amber)]" : "dim hover:text-[var(--amber)]"}
+          >
+            {isMax ? "❐" : "⛶"}
+          </button>
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => removeWidget(w.id)}
+            title={t("Close widget")}
+            className="dim hover:text-[var(--down)]"
+          >
+            ✕
+          </button>
+        </span>
+      </div>
+      <div className="flex-1 overflow-auto min-h-0">
+        <WidgetErrorBoundary name={t(TITLES[w.type])}>
+          <WidgetBody widget={w} />
+        </WidgetErrorBoundary>
+      </div>
+    </div>
+  );
+}
 
 export default function Workspace() {
   const widgets = useTerminal((s) => s.widgets);
   const layout = useTerminal((s) => s.layout);
   const setLayout = useTerminal((s) => s.setLayout);
-  const removeWidget = useTerminal((s) => s.removeWidget);
-  const toggleLinked = useTerminal((s) => s.toggleLinked);
-  const activeSymbol = useTerminal((s) => s.activeSymbol);
+  const maximized = useTerminal((s) => s.maximized);
+  const setMaximized = useTerminal((s) => s.setMaximized);
+  const maxWidget = widgets.find((w) => w.id === maximized);
 
-  const symbolAware = new Set(["quote", "chart", "news", "options", "insider", "fundamentals"]);
+  useEffect(() => {
+    if (!maxWidget) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMaximized(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [maxWidget, setMaximized]);
+
+  // Full-screen mode shows just that widget; the grid layout is left untouched.
+  if (maxWidget) {
+    return (
+      <div className="h-full p-1">
+        <Panel widget={maxWidget} />
+      </div>
+    );
+  }
 
   return (
     <Grid
@@ -128,39 +204,7 @@ export default function Workspace() {
     >
       {widgets.map((w) => (
         <div key={w.id}>
-          <div className="terminal-panel">
-            <div className="panel-title">
-              <span>
-                {t(TITLES[w.type])}
-                {symbolAware.has(w.type) && <SymbolTag widget={w} activeSymbol={activeSymbol} />}
-              </span>
-              <span className="flex gap-2 items-center">
-                {symbolAware.has(w.type) && (
-                  <button
-                    title={t(w.linked ? "Linked to active symbol (click to unlink)" : "Unlinked (click to link)")}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => toggleLinked(w.id)}
-                    className={w.linked ? "text-[var(--amber)]" : "dim"}
-                  >
-                    ⛓
-                  </button>
-                )}
-                <button
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => removeWidget(w.id)}
-                  title={t("Close widget")}
-                  className="dim hover:text-[var(--down)]"
-                >
-                  ✕
-                </button>
-              </span>
-            </div>
-            <div className="flex-1 overflow-auto min-h-0">
-              <WidgetErrorBoundary name={t(TITLES[w.type])}>
-                <WidgetBody widget={w} />
-              </WidgetErrorBoundary>
-            </div>
-          </div>
+          <Panel widget={w} />
         </div>
       ))}
     </Grid>

@@ -5,6 +5,8 @@ import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
 import Workspace from "./Workspace";
 import CommandPalette from "./CommandPalette";
+import WorkspaceTabs from "./WorkspaceTabs";
+import AlertWatcher from "./AlertWatcher";
 import { useTerminal } from "../store/terminal";
 
 export default function Terminal() {
@@ -52,11 +54,15 @@ export default function Terminal() {
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-auto">
-          <Workspace />
+        <main className="flex-1 flex flex-col min-w-0">
+          <WorkspaceTabs />
+          <div className="flex-1 overflow-auto min-h-0">
+            <Workspace />
+          </div>
         </main>
       </div>
       <CommandPalette />
+      <AlertWatcher />
     </div>
   );
 }
